@@ -1,0 +1,304 @@
+---
+title: "A practical workflow with neuralnetwork"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{A practical workflow with neuralnetwork}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 4
+)
+```
+
+`neuralnetwork` fits compact multilayer perceptrons with ordinary R inputs. It
+is aimed at tabular regression and classification problems where formula
+interfaces, predictable outputs, validation, tuning, and diagnostics matter as
+much as the training algorithm.
+
+```{r setup}
+library(neuralnetwork)
+```
+
+## Multiclass Classification
+
+Start with the formula interface and automatic defaults. For small tabular data,
+`hidden = "auto"` and `optimizer = "auto"` are usually enough for a first pass.
+
+```{r classification}
+fit_class <- nn_fit(
+  Species ~ .,
+  data = iris,
+  hidden = "auto",
+  optimizer = "auto",
+  epochs = 10,
+  validation_split = 0.2,
+  seed = 1,
+  verbose = FALSE
+)
+
+fit_class
+```
+
+The printed model is meant to be read at a glance. It shows the task,
+architecture, optimizer, loss, backend, number of epochs, best epoch, and final
+training or validation metrics.
+
+Use `predict()` for classes or probabilities.
+
+```{r classification-predict}
+predict(fit_class, iris[1:5, ], type = "class")
+round(predict(fit_class, iris[1:5, ], type = "prob"), 3)
+```
+
+`nn_evaluate()` returns task-aware metrics. Multiclass classification includes
+accuracy, balanced accuracy, macro precision, macro recall, macro F1, and log
+loss.
+
+```{r classification-evaluate}
+ev_class <- nn_evaluate(fit_class, iris)
+ev_class
+```
+
+For imbalanced classification problems, balanced accuracy or F1 is often more
+informative than raw accuracy. For calibrated probability workflows, inspect
+log loss as well.
+
+## Binary Classification and Weights
+
+Two-class outcomes use a one-output sigmoid model internally. The public
+prediction API still returns a two-column probability matrix.
+
+```{r binary}
+iris_binary <- subset(iris, Species != "virginica")
+row_weight <- ifelse(iris_binary$Species == "versicolor", 1.5, 1)
+
+fit_binary <- nn_fit(
+  Species ~ .,
+  data = iris_binary,
+  hidden = c(6, 3),
+  optimizer = "adam",
+  epochs = 8,
+  batch_size = 16,
+  learning_rate = 0.01,
+  sample_weight = row_weight,
+  class_weight = "balanced",
+  gradient_clip = 5,
+  validation_split = 0.2,
+  seed = 2,
+  verbose = FALSE
+)
+
+round(predict(fit_binary, iris_binary[1:5, ], type = "prob"), 3)
+nn_evaluate(fit_binary, iris_binary)
+```
+
+## Regression
+
+Regression follows the same shape. By default, regression targets are scaled for
+training and predictions are returned on the original scale.
+
+```{r regression}
+fit_reg <- nn_fit(
+  mpg ~ wt + hp + disp,
+  data = mtcars,
+  hidden = c(8, 4),
+  optimizer = "adam",
+  epochs = 25,
+  batch_size = 8,
+  learning_rate = 0.01,
+  validation_split = 0.2,
+  seed = 3,
+  verbose = FALSE
+)
+
+fit_reg
+round(predict(fit_reg, mtcars[1:5, ]), 2)
+nn_evaluate(fit_reg, mtcars)
+```
+
+## Robust Regression
+
+Squared error is the default regression loss. If a few observations may be
+unusually influential, use Huber loss.
+
+```{r huber}
+mtcars_outlier <- mtcars
+mtcars_outlier$mpg[1] <- mtcars_outlier$mpg[1] + 40
+
+fit_huber <- nn_fit(
+  mpg ~ wt + hp,
+  data = mtcars_outlier,
+  hidden = 4,
+  optimizer = "adam",
+  loss = "huber",
+  huber_delta = 1,
+  epochs = 20,
+  batch_size = 8,
+  learning_rate = 0.01,
+  seed = 4,
+  verbose = FALSE
+)
+
+summary(fit_huber)
+```
+
+## Training Controls
+
+The training loop supports dropout, L2 regularization, gradient clipping,
+learning-rate decay, validation splits, early stopping, and callbacks. This
+example stops after two epochs so the mechanism is visible without making the
+vignette slow.
+
+```{r controls}
+epochs_seen <- 0L
+
+fit_callback <- nn_fit(
+  mpg ~ wt + hp,
+  data = mtcars,
+  hidden = 4,
+  optimizer = "adam",
+  epochs = 20,
+  batch_size = 8,
+  learning_rate = 0.01,
+  l2 = 1e-4,
+  dropout = 0.05,
+  gradient_clip = 5,
+  validation_split = 0.2,
+  callbacks = function(state) {
+    epochs_seen <<- state$epoch
+    if (state$epoch >= 2) {
+      return(list(stop = TRUE))
+    }
+    NULL
+  },
+  seed = 5,
+  verbose = FALSE
+)
+
+fit_callback
+```
+
+Some useful starting points:
+
+- Use `validation_split = 0.2` when you want validation loss, early stopping, or
+  validation-based tuning.
+- Use `gradient_clip` when gradients can spike.
+- Use `dropout` and `l2` when the model begins to overfit.
+- Use `learning_rate_decay` or a callback when a fixed learning rate is too
+  blunt.
+
+## Tuning and Cross-Validation
+
+Use `nn_tune()` for a compact grid search. Classification metrics include
+`accuracy`, `balanced_accuracy`, `f1`, and `log_loss`. Regression metrics include
+`rmse`, `mae`, and `rsq`.
+
+```{r tuning}
+tuned <- nn_tune(
+  Species ~ .,
+  data = iris,
+  grid = list(
+    hidden = list(4, c(6, 3)),
+    learning_rate = c(0.01)
+  ),
+  metric = "balanced_accuracy",
+  epochs = 4,
+  validation_split = 0.2,
+  seed = 6,
+  verbose = FALSE
+)
+
+tuned
+tuned$best_params
+```
+
+Use `nn_cv()` when you want fold-level estimates.
+
+```{r cv}
+cv <- nn_cv(
+  Species ~ .,
+  data = iris,
+  k = 3,
+  metric = "f1",
+  hidden = 4,
+  epochs = 2,
+  seed = 7,
+  verbose = FALSE
+)
+
+cv
+```
+
+## Permutation Importance
+
+Permutation importance measures how much a metric changes when one feature is
+shuffled.
+
+```{r importance}
+imp <- nn_permutation_importance(
+  fit_reg,
+  mtcars,
+  metric = "mae",
+  n_repeats = 2,
+  seed = 8
+)
+
+imp
+```
+
+## Save, Load, and Inspect
+
+Models are ordinary R objects. Use `nn_save()` and `nn_load()` when you want a
+small checked wrapper around `saveRDS()` and `readRDS()`.
+
+```{r save-load}
+model_path <- tempfile(fileext = ".rds")
+nn_save(fit_reg, model_path)
+fit_loaded <- nn_load(model_path)
+
+all.equal(
+  predict(fit_reg, mtcars[1:3, ]),
+  predict(fit_loaded, mtcars[1:3, ])
+)
+```
+
+The package also includes compatibility helpers for common `nnet` and
+`neuralnet` workflows.
+
+```{r compatibility}
+nn_class_ind(iris$Species[1:4])
+
+computed <- nn_compute(fit_class, iris[1:2, ])
+names(computed$neurons)
+round(computed$net.result, 3)
+```
+
+## Function Map
+
+Use this as a quick map when moving from older shallow-network workflows.
+
+| Need | Use |
+|---|---|
+| Fit a regression or classification network | `nn_fit()` |
+| Fit a no-hidden-layer multinomial model | `nn_multinom()` |
+| Get class probabilities or numeric predictions | `predict()` |
+| Score a fitted model | `nn_evaluate()` |
+| Tune a small grid | `nn_tune()` |
+| Run repeated k-fold validation | `nn_cv()` |
+| Estimate feature importance | `nn_permutation_importance()` |
+| Get compute-style hidden activations | `nn_compute()` |
+| Get generalized weights | `nn_generalized_weights()` |
+| Save and reload a model | `nn_save()` and `nn_load()` |
+
+For most projects, start with `nn_fit()`, inspect `nn_evaluate()`, and add
+`nn_tune()` or `nn_cv()` only when the first model is promising enough to
+justify the extra computation.
+
+For reference-style help, see `?neuralnetwork`, `?neuralnetwork-metrics`,
+`?neuralnetwork-callbacks`, and `?neuralnetwork-objects`.
