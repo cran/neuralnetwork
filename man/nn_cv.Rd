@@ -22,22 +22,25 @@ nn_cv(
 }
 \arguments{
 \item{x, y, data}{Model inputs passed to \code{\link{nn_fit}}.}
-\item{k}{Number of folds.}
-\item{repeats}{Number of repeated fold assignments.}
+\item{k}{Integer number of folds, between 2 and the number of rows.}
+\item{repeats}{Positive integer number of repeated fold assignments.}
 \item{stratify}{Whether to stratify folds for factor, character, or logical
 outcomes.}
 \item{metric}{Metric to report. \code{"auto"} uses accuracy for classification
 and RMSE for regression. \code{"f1"} uses the positive-class F1 for binary
 classification and macro F1 for multiclass classification.}
-\item{seed}{Optional random seed.}
+\item{seed}{Optional non-negative integer random seed. Fold models receive
+deterministic consecutive seeds derived from this value.}
 \item{verbose}{Whether individual fits should print progress.}
 \item{...}{Additional arguments passed to \code{\link{nn_fit}}.}
 }
 \details{
 For factor, character, and logical outcomes, \code{stratify = TRUE} attempts to
-keep class proportions similar across folds. For other outcomes, folds are
-sampled without stratification. Repeated cross-validation creates a new fold
-assignment for each repeat.
+keep class proportions similar across folds. Each class must have at least
+\code{k} rows; otherwise a stratified split would create folds whose training
+sets do not contain all classes. For other outcomes, folds are sampled without
+stratification. Repeated cross-validation creates a new fold assignment for
+each repeat.
 
 The metric is computed on each held-out fold using \code{\link{nn_evaluate}}.
 The returned \code{summary} data frame reports the mean and standard deviation

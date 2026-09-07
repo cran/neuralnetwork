@@ -13,8 +13,9 @@ nn_evaluate(model, newdata, y = NULL)
 \arguments{
 \item{model}{A fitted \code{neuralnetwork} object.}
 \item{newdata}{Data containing predictors, and optionally the response.}
-\item{y}{Optional truth vector or matrix. Required when \code{newdata} does not
-contain the original formula response.}
+\item{y}{Optional truth vector or matrix, with one row or value per prediction
+row. Required when \code{newdata} does not contain the original formula
+response.}
 }
 \details{
 For classification, truth values are compared against predicted classes and

@@ -39,11 +39,18 @@ nn_fit <- function(x,
   backend <- .resolve_backend(match.arg(backend))
   loss <- match.arg(loss)
   callbacks <- .validate_callbacks(callbacks)
+  .validate_flag(scale, "scale")
+  .validate_flag(y_scale, "y_scale")
+  .validate_flag(shuffle, "shuffle")
+  .validate_flag(verbose, "verbose")
+  .validate_seed(seed)
   hidden <- .validate_hidden(hidden)
   epochs <- .resolve_epochs(epochs, stepmax)
   .validate_training_args(epochs, batch_size, learning_rate, l2,
                           validation_split, gradient_clip,
-                          learning_rate_decay, threshold, momentum)
+                          learning_rate_decay, threshold, momentum,
+                          beta1, beta2, epsilon,
+                          patience, min_delta)
 
   if (!is.null(seed)) {
     set.seed(seed)
@@ -91,6 +98,7 @@ nn_fit <- function(x,
   stopped_early <- FALSE
   stop_reason <- NA_character_
   previous_monitor_loss <- Inf
+  convergence <- list(code = NA_integer_, message = NA_character_)
 
   if (optimizer == "lbfgs") {
     if (any(dropout > 0)) {
@@ -105,6 +113,10 @@ nn_fit <- function(x,
     best_params <- .copy_params(params)
     best_loss <- fit$best_loss
     best_epoch <- 1L
+    convergence <- list(
+      code = as.integer(fit$convergence),
+      message = fit$message %||% NA_character_
+    )
   } else {
     history <- .new_history(epochs)
     history_rows <- 0L
@@ -286,9 +298,11 @@ nn_fit <- function(x,
     output_dim = output_dim,
     history = history,
     epochs = if (optimizer == "lbfgs") history$epoch[nrow(history)] else nrow(history),
+    training_units = if (optimizer == "lbfgs") "function_evaluations" else "epochs",
     best_epoch = best_epoch,
     stopped_early = stopped_early,
     stop_reason = stop_reason,
+    convergence = convergence,
     metric_name = .metric_name(task),
     call = match.call()
   )
@@ -359,8 +373,22 @@ print.neuralnetwork <- function(x, ...) {
   cat("  Optimizer:  ", x$optimizer, " | activation: ", x$activation,
       " | backend: ", x$backend %||% "r", "\n", sep = "")
   cat("  Loss:       ", .loss_label(x), "\n", sep = "")
-  cat("  Trained:    ", x$epochs, " epoch", if (x$epochs == 1L) "" else "s",
-      " | best epoch: ", x$best_epoch, "\n", sep = "")
+  if (identical(x$training_units %||% "epochs", "function_evaluations")) {
+    cat("  Trained:    ", x$epochs, " function evaluation",
+        if (x$epochs == 1L) "" else "s", "\n", sep = "")
+    if (!is.null(x$convergence) && !is.na(x$convergence$code)) {
+      message <- x$convergence$message
+      message <- if (length(message) && !is.na(message)) {
+        paste0(" | message: ", message)
+      } else {
+        ""
+      }
+      cat("  Convergence: code ", x$convergence$code, message, "\n", sep = "")
+    }
+  } else {
+    cat("  Trained:    ", x$epochs, " epoch", if (x$epochs == 1L) "" else "s",
+        " | best epoch: ", x$best_epoch, "\n", sep = "")
+  }
   cat("  Final:      train loss ", .fmt(final$train_loss),
       " | ", x$metric_name, " ", .fmt(final$train_metric), "\n", sep = "")
   if (!is.na(final$validation_loss)) {
@@ -427,6 +455,12 @@ nn_load <- function(path) {
 
 nn_class_ind <- function(classes) {
   classes <- if (is.factor(classes)) classes else factor(classes)
+  if (!length(classes)) {
+    stop("`classes` must contain at least one value.", call. = FALSE)
+  }
+  if (anyNA(classes)) {
+    stop("`classes` cannot contain missing values.", call. = FALSE)
+  }
   out <- matrix(0, nrow = length(classes), ncol = nlevels(classes))
   out[cbind(seq_along(classes), as.integer(classes))] <- 1
   colnames(out) <- levels(classes)
@@ -455,6 +489,9 @@ nn_compute <- function(model, newdata) {
   if (!inherits(model, "neuralnetwork")) {
     stop("`model` must be a neuralnetwork object.", call. = FALSE)
   }
+  if (missing(newdata)) {
+    stop("`newdata` is required.", call. = FALSE)
+  }
   x <- .prepare_new_x(newdata, model$blueprint)
   x <- .apply_scaler(x, model$scaler)
   traced <- .forward_trace(x, model$params, model$activation, model$task,
@@ -478,6 +515,10 @@ nn_generalized_weights <- function(model, newdata, response = 1L,
   if (!inherits(model, "neuralnetwork")) {
     stop("`model` must be a neuralnetwork object.", call. = FALSE)
   }
+  if (missing(newdata)) {
+    stop("`newdata` is required.", call. = FALSE)
+  }
+  .validate_positive_scalar(epsilon, "epsilon")
   x <- .prepare_new_x(newdata, model$blueprint)
   x <- .apply_scaler(x, model$scaler)
   response <- .resolve_response_index(model, response)
@@ -494,6 +535,9 @@ nn_generalized_weights <- function(model, newdata, response = 1L,
 
 nn_gwplot <- function(model, newdata, selected.covariate = 1L,
                       response = 1L, ...) {
+  if (missing(newdata)) {
+    stop("`newdata` is required.", call. = FALSE)
+  }
   gw <- nn_generalized_weights(model, newdata, response = response)
   feature <- .resolve_feature_index(model, selected.covariate)
   x <- .prepare_new_x(newdata, model$blueprint)[, feature]
@@ -507,9 +551,16 @@ nn_hessian <- function(model, newdata, y = NULL, epsilon = 1e-4,
   if (!inherits(model, "neuralnetwork")) {
     stop("`model` must be a neuralnetwork object.", call. = FALSE)
   }
+  if (missing(newdata)) {
+    stop("`newdata` is required.", call. = FALSE)
+  }
+  .validate_positive_scalar(epsilon, "epsilon")
+  .validate_positive_integer(max_params, "max_params")
   x <- .prepare_new_x(newdata, model$blueprint)
   x <- .apply_scaler(x, model$scaler)
-  truth <- .encode_truth_for_model(model, .extract_truth(model, newdata, y))
+  truth_raw <- .extract_truth(model, newdata, y)
+  .check_truth_length(truth_raw, nrow(x))
+  truth <- .encode_truth_for_model(model, truth_raw)
   flat <- .flatten_params(model$params)
   p <- length(flat$values)
   if (p > max_params) {
@@ -546,6 +597,10 @@ nn_hessian <- function(model, newdata, y = NULL, epsilon = 1e-4,
 
 nn_confint <- function(model, newdata, y = NULL, level = 0.95,
                        epsilon = 1e-4, max_params = 120) {
+  if (missing(newdata)) {
+    stop("`newdata` is required.", call. = FALSE)
+  }
+  .validate_probability_level(level)
   hessian <- nn_hessian(model, newdata, y = y, epsilon = epsilon,
                         max_params = max_params)
   flat <- .flatten_params(model$params)
@@ -590,8 +645,13 @@ summary.neuralnetwork <- function(object, ...) {
     huber_delta = object$huber_delta %||% NA_real_,
     backend = object$backend,
     epochs = object$epochs,
+    training_units = object$training_units %||% "epochs",
     best_epoch = object$best_epoch,
     metric_name = object$metric_name,
+    convergence = object$convergence %||% list(
+      code = NA_integer_,
+      message = NA_character_
+    ),
     final = object$history[nrow(object$history), , drop = FALSE]
   ), class = "summary.neuralnetwork")
 }
@@ -607,7 +667,20 @@ print.summary.neuralnetwork <- function(x, ...) {
   } else {
     x$loss
   }, "\n", sep = "")
-  cat("  Epochs:     ", x$epochs, " | best epoch: ", x$best_epoch, "\n", sep = "")
+  if (identical(x$training_units %||% "epochs", "function_evaluations")) {
+    cat("  Evaluations: ", x$epochs, "\n", sep = "")
+  } else {
+    cat("  Epochs:     ", x$epochs, " | best epoch: ", x$best_epoch, "\n", sep = "")
+  }
+  if (identical(x$optimizer, "lbfgs")) {
+    message <- x$convergence$message
+    message <- if (length(message) && !is.na(message)) {
+      paste0(" | message: ", message)
+    } else {
+      ""
+    }
+    cat("  Convergence: code ", x$convergence$code, message, "\n", sep = "")
+  }
   cat("\nFinal training row:\n")
   print(.format_history_row(x$final), row.names = FALSE)
   invisible(x)
@@ -625,6 +698,7 @@ nn_evaluate <- function(model, newdata, y = NULL) {
 
   if (model$task %in% c("classification", "binary_classification")) {
     pred <- predict(model, newdata, type = "class")
+    .check_truth_length(truth, NROW(pred))
     prob <- predict(model, newdata, type = "prob")
     truth <- factor(truth, levels = model$classes)
     confusion <- table(truth = truth, estimate = pred)
@@ -638,6 +712,7 @@ nn_evaluate <- function(model, newdata, y = NULL) {
   }
 
   pred <- predict(model, newdata)
+  .check_truth_length(truth, NROW(pred))
   metrics <- .regression_metrics(pred, truth)
   structure(list(metrics = metrics, predictions = pred),
             class = "neuralnetwork_evaluation")
@@ -651,10 +726,13 @@ nn_tune <- function(x,
                     metric = c("auto", "loss", "accuracy", "balanced_accuracy",
                                "log_loss", "f1", "rmse", "mae", "rsq"),
                     maximize = NULL,
+                    error_action = c("stop", "continue"),
                     seed = NULL,
                     verbose = FALSE,
                     ...) {
   metric <- match.arg(metric)
+  error_action <- match.arg(error_action)
+  .validate_seed(seed)
   if (is.null(grid)) {
     grid <- list(
       hidden = list(c(16), c(32), c(32, 16)),
@@ -673,7 +751,8 @@ nn_tune <- function(x,
 
   models <- vector("list", nrow(candidates))
   scores <- rep(NA_real_, nrow(candidates))
-  metric_names <- character(nrow(candidates))
+  metric_names <- rep(NA_character_, nrow(candidates))
+  errors <- rep(NA_character_, nrow(candidates))
 
   for (i in seq_len(nrow(candidates))) {
     args <- c(
@@ -683,36 +762,79 @@ nn_tune <- function(x,
       list(...)
     )
     if (!is.null(seed)) {
-      args$seed <- seed + i - 1L
+      args$seed <- .offset_seed(seed, i - 1L)
     }
-    model <- do.call(nn_fit, args)
+    model <- tryCatch(
+      do.call(nn_fit, args),
+      error = function(e) {
+        if (error_action == "stop") {
+          stop(conditionMessage(e), call. = FALSE)
+        }
+        errors[i] <<- conditionMessage(e)
+        NULL
+      }
+    )
+    if (is.null(model)) {
+      next
+    }
+    score <- tryCatch(
+      .tune_score(model, metric),
+      error = function(e) {
+        if (error_action == "stop") {
+          stop(conditionMessage(e), call. = FALSE)
+        }
+        errors[i] <<- conditionMessage(e)
+        NULL
+      }
+    )
+    if (is.null(score)) {
+      models[[i]] <- model
+      next
+    }
     models[[i]] <- model
-    score <- .tune_score(model, metric)
     scores[i] <- score$value
     metric_names[i] <- score$name
   }
 
+  unavailable <- is.na(errors) & is.na(scores)
+  errors[unavailable] <- "Candidate produced an unavailable score."
+  valid <- which(!is.na(scores))
+  if (!length(valid)) {
+    first_error <- errors[!is.na(errors)][1L]
+    detail <- if (length(first_error) && !is.na(first_error)) {
+      paste0(" First error: ", first_error)
+    } else {
+      ""
+    }
+    stop("All tuning candidates failed or produced unavailable scores.",
+         detail, call. = FALSE)
+  }
+
   if (is.null(maximize)) {
-    maximize <- metric_names[1L] %in% c("accuracy", "balanced_accuracy",
-                                        "macro_f1", "f1", "rsq")
+    maximize <- metric_names[valid[1L]] %in% c("accuracy", "balanced_accuracy",
+                                               "macro_f1", "f1", "rsq")
   }
   best <- if (isTRUE(maximize)) {
-    which.max(scores)
+    valid[which.max(scores[valid])]
   } else {
-    which.min(scores)
+    valid[which.min(scores[valid])]
   }
 
   results <- candidates
+  results$success <- is.na(errors)
   results$metric <- metric_names
   results$score <- scores
+  results$error <- errors
   results$rank <- rank(if (isTRUE(maximize)) -scores else scores,
-                       ties.method = "first")
+                       ties.method = "first", na.last = "keep")
+  results <- results[order(results$rank, na.last = TRUE), , drop = FALSE]
 
   structure(list(
-    results = results[order(results$rank), , drop = FALSE],
+    results = results,
     best_model = models[[best]],
     best_params = candidates[best, , drop = FALSE],
     models = models,
+    errors = errors,
     maximize = maximize
   ), class = "neuralnetwork_tune")
 }
@@ -729,6 +851,7 @@ nn_cv <- function(x,
                   verbose = FALSE,
                   ...) {
   metric <- match.arg(metric)
+  .validate_seed(seed)
   source <- .cv_source(x, y, data, parent.frame())
   folds <- .make_cv_folds(source$y, k, repeats, stratify, seed)
   results <- vector("list", length(folds))
@@ -742,7 +865,7 @@ nn_cv <- function(x,
               list(verbose = verbose),
               list(...))
     if (!is.null(seed)) {
-      args$seed <- seed + i - 1L
+      args$seed <- .offset_seed(seed, i - 1L)
     }
     model <- do.call(nn_fit, args)
     evaluation <- do.call(nn_evaluate, .cv_eval_args(source, model, test_idx))
@@ -791,8 +914,13 @@ nn_permutation_importance <- function(model,
     stop("`model` must be a neuralnetwork object.", call. = FALSE)
   }
   metric <- match.arg(metric)
+  if (missing(newdata)) {
+    stop("`newdata` is required.", call. = FALSE)
+  }
+  .validate_seed(seed)
   if (!is.numeric(n_repeats) || length(n_repeats) != 1L ||
-      is.na(n_repeats) || n_repeats < 1 || n_repeats != floor(n_repeats)) {
+      is.na(n_repeats) || !is.finite(n_repeats) || n_repeats < 1 ||
+      n_repeats != floor(n_repeats) || n_repeats > .Machine$integer.max) {
     stop("`n_repeats` must be a positive integer.", call. = FALSE)
   }
   if (!is.null(seed)) {
@@ -801,6 +929,7 @@ nn_permutation_importance <- function(model,
 
   truth <- .extract_truth(model, newdata, y)
   x <- .prepare_new_x(newdata, model$blueprint)
+  .check_truth_length(truth, nrow(x))
   x <- .apply_scaler(x, model$scaler)
   baseline <- .score_model_matrix(model, x, truth, metric)
   higher_is_better <- baseline$name %in% c("accuracy", "balanced_accuracy",
@@ -852,8 +981,16 @@ print.neuralnetwork_evaluation <- function(x, ...) {
 print.neuralnetwork_tune <- function(x, ...) {
   top <- utils::head(x$results, 5L)
   direction <- if (isTRUE(x$maximize)) "higher is better" else "lower is better"
+  failed <- if ("success" %in% names(x$results)) {
+    sum(!x$results$success)
+  } else {
+    0L
+  }
   cat("neuralnetwork tuning result\n")
   cat("  Candidates: ", nrow(x$results), "\n", sep = "")
+  if (failed > 0L) {
+    cat("  Failed:     ", failed, "\n", sep = "")
+  }
   cat("  Objective:  ", top$metric[1L], " (", direction, ")\n", sep = "")
   cat("  Best score: ", .fmt(top$score[1L]), "\n\n", sep = "")
   cat("Top candidates:\n")
@@ -1038,9 +1175,21 @@ print.neuralnetwork_importance <- function(x, ...) {
 
 .prepare_new_x <- function(newdata, blueprint) {
   if (blueprint$kind %in% c("formula", "data.frame")) {
-    mf <- stats::model.frame(blueprint$x_terms, data = newdata,
-                             na.action = stats::na.pass,
-                             xlev = blueprint$xlevels)
+    mf <- tryCatch(
+      stats::model.frame(blueprint$x_terms, data = newdata,
+                         na.action = stats::na.pass,
+                         xlev = blueprint$xlevels),
+      error = function(e) {
+        message <- conditionMessage(e)
+        if (grepl("new level", message, fixed = TRUE) ||
+            grepl("new levels", message, fixed = TRUE)) {
+          stop("`newdata` contains factor levels not seen during fitting. ",
+               message, call. = FALSE)
+        }
+        stop("Could not prepare `newdata` with the fitted predictors. ",
+             message, call. = FALSE)
+      }
+    )
     mat <- stats::model.matrix(blueprint$x_terms, mf,
                                contrasts.arg = blueprint$contrasts)
     mat <- .drop_intercept(mat)
@@ -1100,6 +1249,7 @@ print.neuralnetwork_importance <- function(x, ...) {
           class_index = class_index
         ))
       }
+      mat <- .validate_class_matrix(mat)
       class_index <- max.col(mat, ties.method = "first")
       return(list(
         y = mat,
@@ -1151,6 +1301,19 @@ print.neuralnetwork_importance <- function(x, ...) {
   )
 }
 
+.validate_class_matrix <- function(mat) {
+  if (any(mat < 0 | mat > 1)) {
+    stop("Classification matrices must contain class indicators or probabilities in [0, 1].",
+         call. = FALSE)
+  }
+  row_total <- rowSums(mat)
+  if (any(abs(row_total - 1) > 1e-8)) {
+    stop("Rows of a classification matrix must sum to 1.",
+         call. = FALSE)
+  }
+  mat
+}
+
 .double_matrix <- function(x) {
   if (is.vector(x) && !is.list(x)) {
     x <- matrix(x, ncol = 1L)
@@ -1159,7 +1322,7 @@ print.neuralnetwork_importance <- function(x, ...) {
   }
   storage.mode(x) <- "double"
   if (anyNA(x)) {
-    stop("Missing values are not supported. Impute or remove them before fitting.",
+    stop("Input data contains missing values. Impute or remove them before fitting or prediction.",
          call. = FALSE)
   }
   if (any(!is.finite(x))) {
@@ -1300,10 +1463,14 @@ print.neuralnetwork_importance <- function(x, ...) {
   if (length(hidden) == 0L) {
     return(integer(0))
   }
+  if (is.character(hidden)) {
+    stop("`hidden` must contain positive integer layer sizes, or 0 for no hidden layer.",
+         call. = FALSE)
+  }
   if (length(hidden) == 1L && identical(as.numeric(hidden), 0)) {
     return(integer(0))
   }
-  if (!is.numeric(hidden) || anyNA(hidden) ||
+  if (!is.numeric(hidden) || anyNA(hidden) || any(!is.finite(hidden)) ||
       any(hidden < 1) || any(hidden != floor(hidden))) {
     stop("`hidden` must contain positive integer layer sizes, or 0 for no hidden layer.",
          call. = FALSE)
@@ -1326,6 +1493,9 @@ print.neuralnetwork_importance <- function(x, ...) {
 }
 
 .validate_dropout <- function(dropout, n_hidden) {
+  if (!is.numeric(dropout) || anyNA(dropout) || any(!is.finite(dropout))) {
+    stop("`dropout` must be numeric values in [0, 1).", call. = FALSE)
+  }
   if (n_hidden == 0L) {
     if (length(dropout) == 1L && dropout == 0) {
       return(numeric(0))
@@ -1345,7 +1515,8 @@ print.neuralnetwork_importance <- function(x, ...) {
 .resolve_epochs <- function(epochs, stepmax) {
   if (!is.null(stepmax)) {
     if (!is.numeric(stepmax) || length(stepmax) != 1L || is.na(stepmax) ||
-        stepmax < 1 || stepmax != floor(stepmax)) {
+        !is.finite(stepmax) || stepmax < 1 || stepmax != floor(stepmax) ||
+        stepmax > .Machine$integer.max) {
       stop("`stepmax` must be a positive integer when supplied.",
            call. = FALSE)
     }
@@ -1357,24 +1528,29 @@ print.neuralnetwork_importance <- function(x, ...) {
 .validate_training_args <- function(epochs, batch_size, learning_rate, l2,
                                     validation_split, gradient_clip,
                                     learning_rate_decay, threshold,
-                                    momentum) {
+                                    momentum, beta1, beta2, epsilon,
+                                    patience, min_delta) {
   if (!is.numeric(epochs) || length(epochs) != 1L || is.na(epochs) ||
-      epochs < 1 || epochs != floor(epochs)) {
+      !is.finite(epochs) || epochs < 1 || epochs != floor(epochs) ||
+      epochs > .Machine$integer.max) {
     stop("`epochs` must be a positive integer.", call. = FALSE)
   }
   if (!is.numeric(batch_size) || length(batch_size) != 1L || is.na(batch_size) ||
-      batch_size < 1 || batch_size != floor(batch_size)) {
+      !is.finite(batch_size) || batch_size < 1 ||
+      batch_size != floor(batch_size) || batch_size > .Machine$integer.max) {
     stop("`batch_size` must be a positive integer.", call. = FALSE)
   }
   if (!is.numeric(learning_rate) || length(learning_rate) != 1L ||
-      is.na(learning_rate) || learning_rate <= 0) {
-    stop("`learning_rate` must be positive.", call. = FALSE)
+      is.na(learning_rate) || !is.finite(learning_rate) || learning_rate <= 0) {
+    stop("`learning_rate` must be a positive finite number.", call. = FALSE)
   }
-  if (!is.numeric(l2) || length(l2) != 1L || is.na(l2) || l2 < 0) {
-    stop("`l2` cannot be negative.", call. = FALSE)
+  if (!is.numeric(l2) || length(l2) != 1L || is.na(l2) ||
+      !is.finite(l2) || l2 < 0) {
+    stop("`l2` must be a finite non-negative number.", call. = FALSE)
   }
   if (!is.numeric(validation_split) || length(validation_split) != 1L ||
-      is.na(validation_split) || validation_split < 0 || validation_split >= 1) {
+      is.na(validation_split) || !is.finite(validation_split) ||
+      validation_split < 0 || validation_split >= 1) {
     stop("`validation_split` must be in [0, 1).", call. = FALSE)
   }
   if (!is.numeric(gradient_clip) || length(gradient_clip) != 1L ||
@@ -1382,24 +1558,51 @@ print.neuralnetwork_importance <- function(x, ...) {
     stop("`gradient_clip` must be a positive number or Inf.", call. = FALSE)
   }
   if (!is.numeric(learning_rate_decay) || length(learning_rate_decay) != 1L ||
-      is.na(learning_rate_decay) || learning_rate_decay < 0) {
-    stop("`learning_rate_decay` cannot be negative.", call. = FALSE)
+      is.na(learning_rate_decay) || !is.finite(learning_rate_decay) ||
+      learning_rate_decay < 0) {
+    stop("`learning_rate_decay` must be a finite non-negative number.",
+         call. = FALSE)
   }
   if (!is.numeric(threshold) || length(threshold) != 1L ||
-      is.na(threshold) || threshold < 0) {
-    stop("`threshold` cannot be negative.", call. = FALSE)
+      is.na(threshold) || !is.finite(threshold) || threshold < 0) {
+    stop("`threshold` must be a finite non-negative number.", call. = FALSE)
   }
   if (!is.numeric(momentum) || length(momentum) != 1L ||
-      is.na(momentum) || momentum < 0 || momentum >= 1) {
+      is.na(momentum) || !is.finite(momentum) ||
+      momentum < 0 || momentum >= 1) {
     stop("`momentum` must be in [0, 1).", call. = FALSE)
+  }
+  if (!is.numeric(beta1) || length(beta1) != 1L || is.na(beta1) ||
+      !is.finite(beta1) || beta1 < 0 || beta1 >= 1) {
+    stop("`beta1` must be in [0, 1).", call. = FALSE)
+  }
+  if (!is.numeric(beta2) || length(beta2) != 1L || is.na(beta2) ||
+      !is.finite(beta2) || beta2 < 0 || beta2 >= 1) {
+    stop("`beta2` must be in [0, 1).", call. = FALSE)
+  }
+  if (!is.numeric(epsilon) || length(epsilon) != 1L || is.na(epsilon) ||
+      !is.finite(epsilon) || epsilon <= 0) {
+    stop("`epsilon` must be a positive finite number.", call. = FALSE)
+  }
+  patience_ok <- is.numeric(patience) && length(patience) == 1L &&
+    !is.na(patience) &&
+    ((is.infinite(patience) && patience > 0) ||
+      (is.finite(patience) && patience >= 1 &&
+        patience == floor(patience) && patience <= .Machine$integer.max))
+  if (!patience_ok) {
+    stop("`patience` must be a positive integer or Inf.", call. = FALSE)
+  }
+  if (!is.numeric(min_delta) || length(min_delta) != 1L ||
+      is.na(min_delta) || !is.finite(min_delta) || min_delta < 0) {
+    stop("`min_delta` must be a finite non-negative number.", call. = FALSE)
   }
   invisible(TRUE)
 }
 
 .resolve_loss <- function(loss, task, huber_delta) {
   if (!is.numeric(huber_delta) || length(huber_delta) != 1L ||
-      is.na(huber_delta) || huber_delta <= 0) {
-    stop("`huber_delta` must be a positive number.", call. = FALSE)
+      is.na(huber_delta) || !is.finite(huber_delta) || huber_delta <= 0) {
+    stop("`huber_delta` must be a positive finite number.", call. = FALSE)
   }
   if (task %in% c("classification", "binary_classification")) {
     if (loss != "auto") {
@@ -1426,6 +1629,69 @@ print.neuralnetwork_importance <- function(x, ...) {
   }
   stop("Provide `y` or pass `newdata` with the original response column.",
        call. = FALSE)
+}
+
+.check_truth_length <- function(truth, n) {
+  if (NROW(truth) != n) {
+    stop("Outcome data must have one row per prediction row.",
+         call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+.validate_flag <- function(x, name) {
+  if (!is.logical(x) || length(x) != 1L || is.na(x)) {
+    stop("`", name, "` must be TRUE or FALSE.", call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+.validate_seed <- function(seed) {
+  if (is.null(seed)) {
+    return(invisible(TRUE))
+  }
+  if (!is.numeric(seed) || length(seed) != 1L || is.na(seed) ||
+      !is.finite(seed) || seed < 0 || seed != floor(seed) ||
+      seed > .Machine$integer.max) {
+    stop("`seed` must be NULL or a non-negative integer.", call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+.offset_seed <- function(seed, offset) {
+  if (is.null(seed)) {
+    return(NULL)
+  }
+  integer_limit <- as.numeric(.Machine$integer.max)
+  seed_value <- as.numeric(seed) + as.numeric(offset)
+  while (seed_value > integer_limit) {
+    seed_value <- seed_value - integer_limit
+  }
+  as.integer(seed_value)
+}
+
+.validate_positive_scalar <- function(x, name) {
+  if (!is.numeric(x) || length(x) != 1L || is.na(x) ||
+      !is.finite(x) || x <= 0) {
+    stop("`", name, "` must be a positive finite number.", call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+.validate_positive_integer <- function(x, name) {
+  if (!is.numeric(x) || length(x) != 1L || is.na(x) ||
+      !is.finite(x) || x < 1 || x != floor(x)) {
+    stop("`", name, "` must be a positive integer.", call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+.validate_probability_level <- function(level) {
+  if (!is.numeric(level) || length(level) != 1L || is.na(level) ||
+      !is.finite(level) || level <= 0 || level >= 1) {
+    stop("`level` must be a number between 0 and 1.", call. = FALSE)
+  }
+  invisible(TRUE)
 }
 
 .safe_divide <- function(num, den) {
@@ -1628,12 +1894,14 @@ print.neuralnetwork_importance <- function(x, ...) {
 .make_cv_folds <- function(y, k, repeats, stratify, seed) {
   n <- NROW(y)
   if (!is.numeric(k) || length(k) != 1L || is.na(k) ||
-      k < 2 || k != floor(k) || k > n) {
+      !is.finite(k) || k < 2 || k != floor(k) || k > n ||
+      k > .Machine$integer.max) {
     stop("`k` must be an integer between 2 and the number of rows.",
          call. = FALSE)
   }
   if (!is.numeric(repeats) || length(repeats) != 1L || is.na(repeats) ||
-      repeats < 1 || repeats != floor(repeats)) {
+      !is.finite(repeats) || repeats < 1 || repeats != floor(repeats) ||
+      repeats > .Machine$integer.max) {
     stop("`repeats` must be a positive integer.", call. = FALSE)
   }
   if (!is.logical(stratify) || length(stratify) != 1L || is.na(stratify)) {
@@ -1642,9 +1910,19 @@ print.neuralnetwork_importance <- function(x, ...) {
   if (!is.null(seed)) {
     set.seed(seed)
   }
+  if (anyNA(y)) {
+    stop("Outcome values cannot contain missing values.", call. = FALSE)
+  }
 
   folds <- list()
   class_like <- is.factor(y) || is.character(y) || is.logical(y)
+  if (isTRUE(stratify) && class_like) {
+    class_counts <- table(factor(y))
+    if (any(class_counts < k)) {
+      stop("`k` cannot exceed the smallest class size when `stratify = TRUE`.",
+           call. = FALSE)
+    }
+  }
   for (rep_id in seq_len(repeats)) {
     fold_id <- integer(n)
     if (isTRUE(stratify) && class_like) {
@@ -1789,12 +2067,18 @@ print.neuralnetwork_importance <- function(x, ...) {
       result$stop <- TRUE
     } else if (is.list(value)) {
       if (!is.null(value$stop)) {
+        if (!is.logical(value$stop) || length(value$stop) != 1L ||
+            is.na(value$stop)) {
+          stop("Callback `stop` values must be TRUE or FALSE.",
+               call. = FALSE)
+        }
         result$stop <- isTRUE(value$stop)
       }
       if (!is.null(value$learning_rate)) {
         if (!is.numeric(value$learning_rate) || length(value$learning_rate) != 1L ||
-            is.na(value$learning_rate) || value$learning_rate <= 0) {
-          stop("Callback `learning_rate` values must be positive scalars.",
+            is.na(value$learning_rate) || !is.finite(value$learning_rate) ||
+            value$learning_rate <= 0) {
+          stop("Callback `learning_rate` values must be positive finite scalars.",
                call. = FALSE)
         }
         result$learning_rate <- value$learning_rate

@@ -9,7 +9,7 @@
 \alias{nn_confint}
 \title{Compatibility helpers}
 \description{
-Small helpers that cover common \code{nnet} and \code{neuralnet} workflows.
+Small helpers that cover common \code{nnet} and \code{neuralnet} tasks.
 }
 \usage{
 nn_class_ind(classes)
@@ -30,17 +30,20 @@ nn_confint(model, newdata, y = NULL, level = 0.95,
   epsilon = 1e-4, max_params = 120)
 }
 \arguments{
-\item{classes}{A factor or vector of classes.}
+\item{classes}{A non-empty factor or vector of classes without missing values.}
 \item{x}{A vector, matrix, or data frame.}
 \item{formula, data, weights, ...}{Arguments passed to \code{\link{nn_fit}}.}
 \item{model}{A fitted \code{neuralnetwork} model.}
 \item{newdata}{New predictor data.}
 \item{response}{Response name or index.}
-\item{epsilon}{Finite-difference step for generalized weights.}
+\item{epsilon}{Positive finite-difference step for generalized weights and
+Hessian calculations.}
 \item{selected.covariate}{Predictor name or index for plotting generalized weights.}
-\item{y}{Optional truth vector or matrix.}
-\item{level}{Confidence level.}
-\item{max_params}{Maximum parameter count allowed for finite-difference Hessian.}
+\item{y}{Optional truth vector or matrix, with one row or value per prediction
+row.}
+\item{level}{Confidence level between 0 and 1.}
+\item{max_params}{Positive integer maximum parameter count allowed for
+finite-difference Hessian.}
 }
 \details{
 These helpers are intentionally small wrappers around the fitted
@@ -53,7 +56,7 @@ row-wise maxima for matrices and data frames.
 \item \code{nn_multinom()} fits a no-hidden-layer multiclass model, similar in
 spirit to a multinomial log-linear model.
 \item \code{nn_compute()} returns hidden-layer activations and final network
-outputs, matching the compute-style workflow used by \pkg{neuralnet}.
+outputs, matching the compute-style output used by \pkg{neuralnet}.
 \item \code{nn_generalized_weights()} estimates finite-difference input
 sensitivities for a selected response.
 \item \code{nn_hessian()} and \code{nn_confint()} use finite differences and are

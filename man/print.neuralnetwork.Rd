@@ -3,7 +3,9 @@
 \title{Print a neuralnetwork model}
 \description{
 Print a fitted \code{neuralnetwork} model with architecture, optimizer,
-loss, backend, final training metrics, and validation metrics when available.
+loss, backend, training progress, final training metrics, and validation
+metrics when available. L-BFGS fits report function evaluations instead of
+epochs.
 }
 \usage{
 \method{print}{neuralnetwork}(x, ...)

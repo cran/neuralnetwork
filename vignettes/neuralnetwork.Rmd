@@ -1,8 +1,8 @@
 ---
-title: "A practical workflow with neuralnetwork"
+title: "Fitting models with neuralnetwork"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{A practical workflow with neuralnetwork}
+  %\VignetteIndexEntry{Fitting models with neuralnetwork}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -16,19 +16,19 @@ knitr::opts_chunk$set(
 )
 ```
 
-`neuralnetwork` fits compact multilayer perceptrons with ordinary R inputs. It
-is aimed at tabular regression and classification problems where formula
-interfaces, predictable outputs, validation, tuning, and diagnostics matter as
-much as the training algorithm.
+`neuralnetwork` fits multilayer perceptrons for tabular regression and
+classification. The examples below use base R data sets and keep the training
+runs short enough for `R CMD check`, but the same calls work with your own data
+frames and matrices.
 
 ```{r setup}
 library(neuralnetwork)
 ```
 
-## Multiclass Classification
+## Multiclass classification
 
-Start with the formula interface and automatic defaults. For small tabular data,
-`hidden = "auto"` and `optimizer = "auto"` are usually enough for a first pass.
+Start with the formula interface. For small tabular data, `hidden = "auto"` and
+`optimizer = "auto"` are enough for a first fit.
 
 ```{r classification}
 fit_class <- nn_fit(
@@ -45,9 +45,8 @@ fit_class <- nn_fit(
 fit_class
 ```
 
-The printed model is meant to be read at a glance. It shows the task,
-architecture, optimizer, loss, backend, number of epochs, best epoch, and final
-training or validation metrics.
+The printed model reports the task, architecture, optimizer, loss, backend,
+training length, and final training or validation metrics.
 
 Use `predict()` for classes or probabilities.
 
@@ -56,20 +55,19 @@ predict(fit_class, iris[1:5, ], type = "class")
 round(predict(fit_class, iris[1:5, ], type = "prob"), 3)
 ```
 
-`nn_evaluate()` returns task-aware metrics. Multiclass classification includes
-accuracy, balanced accuracy, macro precision, macro recall, macro F1, and log
-loss.
+`nn_evaluate()` returns metrics for the fitted task. Multiclass classification
+includes accuracy, balanced accuracy, macro precision, macro recall, macro F1,
+and log loss.
 
 ```{r classification-evaluate}
 ev_class <- nn_evaluate(fit_class, iris)
 ev_class
 ```
 
-For imbalanced classification problems, balanced accuracy or F1 is often more
-informative than raw accuracy. For calibrated probability workflows, inspect
-log loss as well.
+For imbalanced classification, balanced accuracy or F1 is usually more useful
+than raw accuracy. For probability forecasts, inspect log loss as well.
 
-## Binary Classification and Weights
+## Binary classification and weights
 
 Two-class outcomes use a one-output sigmoid model internally. The public
 prediction API still returns a two-column probability matrix.
@@ -122,7 +120,7 @@ round(predict(fit_reg, mtcars[1:5, ]), 2)
 nn_evaluate(fit_reg, mtcars)
 ```
 
-## Robust Regression
+## Robust regression
 
 Squared error is the default regression loss. If a few observations may be
 unusually influential, use Huber loss.
@@ -148,12 +146,12 @@ fit_huber <- nn_fit(
 summary(fit_huber)
 ```
 
-## Training Controls
+## Training controls
 
 The training loop supports dropout, L2 regularization, gradient clipping,
 learning-rate decay, validation splits, early stopping, and callbacks. This
-example stops after two epochs so the mechanism is visible without making the
-vignette slow.
+example stops after two epochs so the callback behavior is visible without
+making the vignette slow.
 
 ```{r controls}
 epochs_seen <- 0L
@@ -184,18 +182,20 @@ fit_callback <- nn_fit(
 fit_callback
 ```
 
-Some useful starting points:
+Training choices:
 
-- Use `validation_split = 0.2` when you want validation loss, early stopping, or
+- Use `validation_split = 0.2` for validation loss, early stopping, or
   validation-based tuning.
+- When the optimizer resolves to L-BFGS, `epochs` is the `stats::optim()`
+  iteration limit and printed training length is reported as function
+  evaluations.
 - Use `gradient_clip` when gradients can spike.
 - Use `dropout` and `l2` when the model begins to overfit.
-- Use `learning_rate_decay` or a callback when a fixed learning rate is too
-  blunt.
+- Use `learning_rate_decay` or a callback when validation loss stalls.
 
-## Tuning and Cross-Validation
+## Tuning and cross-validation
 
-Use `nn_tune()` for a compact grid search. Classification metrics include
+Use `nn_tune()` for a grid search. Classification metrics include
 `accuracy`, `balanced_accuracy`, `f1`, and `log_loss`. Regression metrics include
 `rmse`, `mae`, and `rsq`.
 
@@ -218,7 +218,12 @@ tuned
 tuned$best_params
 ```
 
-Use `nn_cv()` when you want fold-level estimates.
+When exploring a wider grid, `error_action = "continue"` keeps invalid
+candidate combinations in the result table and ranks the usable fits. The
+default remains strict, so a bad grid fails before it produces misleading
+results.
+
+Use `nn_cv()` for fold-level estimates.
 
 ```{r cv}
 cv <- nn_cv(
@@ -235,7 +240,7 @@ cv <- nn_cv(
 cv
 ```
 
-## Permutation Importance
+## Permutation importance
 
 Permutation importance measures how much a metric changes when one feature is
 shuffled.
@@ -252,10 +257,10 @@ imp <- nn_permutation_importance(
 imp
 ```
 
-## Save, Load, and Inspect
+## Save, load, and inspect
 
-Models are ordinary R objects. Use `nn_save()` and `nn_load()` when you want a
-small checked wrapper around `saveRDS()` and `readRDS()`.
+Models are regular R objects. `nn_save()` and `nn_load()` add package-level
+checks around `saveRDS()` and `readRDS()`.
 
 ```{r save-load}
 model_path <- tempfile(fileext = ".rds")
@@ -268,8 +273,8 @@ all.equal(
 )
 ```
 
-The package also includes compatibility helpers for common `nnet` and
-`neuralnet` workflows.
+The package includes compatibility helpers for common `nnet` and
+`neuralnet` tasks.
 
 ```{r compatibility}
 nn_class_ind(iris$Species[1:4])
@@ -279,9 +284,9 @@ names(computed$neurons)
 round(computed$net.result, 3)
 ```
 
-## Function Map
+## Function map
 
-Use this as a quick map when moving from older shallow-network workflows.
+Function names:
 
 | Need | Use |
 |---|---|
@@ -296,9 +301,8 @@ Use this as a quick map when moving from older shallow-network workflows.
 | Get generalized weights | `nn_generalized_weights()` |
 | Save and reload a model | `nn_save()` and `nn_load()` |
 
-For most projects, start with `nn_fit()`, inspect `nn_evaluate()`, and add
-`nn_tune()` or `nn_cv()` only when the first model is promising enough to
-justify the extra computation.
+Start with `nn_fit()`, inspect `nn_evaluate()`, and add `nn_tune()` or
+`nn_cv()` when the first model is worth more computation.
 
-For reference-style help, see `?neuralnetwork`, `?neuralnetwork-metrics`,
+Reference help: `?neuralnetwork`, `?neuralnetwork-metrics`,
 `?neuralnetwork-callbacks`, and `?neuralnetwork-objects`.

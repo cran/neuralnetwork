@@ -10,7 +10,8 @@ Predict classes, class probabilities, or numeric responses from a fitted
 }
 \arguments{
 \item{object}{A fitted \code{neuralnetwork} object.}
-\item{newdata}{New predictor data.}
+\item{newdata}{New predictor data. Formula and data-frame fits require the
+same predictor variables used during fitting, with compatible factor levels.}
 \item{type}{Prediction type. \code{"response"} returns class labels for
 classification and numeric predictions for regression.}
 \item{...}{Unused.}

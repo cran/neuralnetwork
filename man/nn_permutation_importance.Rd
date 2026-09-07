@@ -20,11 +20,12 @@ nn_permutation_importance(
 \arguments{
 \item{model}{A fitted \code{neuralnetwork} object.}
 \item{newdata}{Data containing predictors, and optionally the response.}
-\item{y}{Optional truth vector or matrix. Required when \code{newdata} does not
-contain the original formula response.}
+\item{y}{Optional truth vector or matrix, with one row or value per prediction
+row. Required when \code{newdata} does not contain the original formula
+response.}
 \item{metric}{Metric used to score the permutations.}
-\item{n_repeats}{Number of permutations per feature.}
-\item{seed}{Optional random seed.}
+\item{n_repeats}{Positive integer number of permutations per feature.}
+\item{seed}{Optional non-negative integer random seed.}
 }
 \details{
 The baseline metric is computed once on \code{newdata}. Then each encoded model

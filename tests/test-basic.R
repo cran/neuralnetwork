@@ -48,6 +48,14 @@ stopifnot("train_metric" %in% names(fit_class$history))
 stopifnot(identical(fit_class$metric_name, "accuracy"))
 stopifnot(ncol(nn_class_ind(iris$Species[1:6])) == 3)
 stopifnot(identical(nn_which_is_max(c(1, 3, 2)), 2L))
+expect_error(
+  nn_class_ind(character()),
+  "`classes` must contain at least one value."
+)
+expect_error(
+  nn_class_ind(c("a", NA)),
+  "`classes` cannot contain missing values."
+)
 
 sigmoid_values <- neuralnetwork:::.stable_sigmoid(matrix(c(-1000, 0, 1000),
                                                          ncol = 1))
@@ -75,10 +83,18 @@ stopifnot(is.table(eval_class$confusion))
 computed <- nn_compute(fit_class, iris[1:3, ])
 stopifnot(is.list(computed$neurons))
 stopifnot(is.matrix(computed$net.result))
+expect_error(
+  nn_compute(fit_class),
+  "`newdata` is required."
+)
 
 gw <- nn_generalized_weights(fit_class, iris[1:4, ], response = "setosa")
 stopifnot(is.matrix(gw))
 stopifnot(nrow(gw) == 4)
+expect_error(
+  nn_generalized_weights(fit_class, iris[1:4, ], epsilon = 0),
+  "`epsilon` must be a positive finite number."
+)
 
 fit_multinom <- nn_multinom(
   Species ~ .,
@@ -104,6 +120,15 @@ fit_lbfgs <- nn_fit(
 )
 stopifnot(identical(fit_lbfgs$optimizer, "lbfgs"))
 stopifnot(is.factor(predict(fit_lbfgs, iris[1:3, ], type = "class")))
+stopifnot(identical(fit_lbfgs$training_units, "function_evaluations"))
+stopifnot(is.list(fit_lbfgs$convergence))
+stopifnot(is.integer(fit_lbfgs$convergence$code))
+stopifnot(length(fit_lbfgs$convergence$code) == 1L)
+stopifnot("convergence" %in% names(summary(fit_lbfgs)))
+stopifnot(any(grepl("function evaluation", capture.output(fit_lbfgs),
+                    fixed = TRUE)))
+stopifnot(any(grepl("Evaluations:", capture.output(summary(fit_lbfgs)),
+                    fixed = TRUE)))
 
 fit_momentum <- nn_fit(
   Species ~ .,
@@ -134,6 +159,22 @@ h <- nn_hessian(fit_tiny, tiny_data)
 ci <- nn_confint(fit_tiny, tiny_data)
 stopifnot(is.matrix(h))
 stopifnot(nrow(ci) == nrow(h))
+expect_error(
+  nn_hessian(fit_tiny, tiny_data[1:3, ], y = tiny_data$Species[1:2]),
+  "Outcome data must have one row per prediction row."
+)
+expect_error(
+  nn_hessian(fit_tiny, tiny_data, epsilon = 0),
+  "`epsilon` must be a positive finite number."
+)
+expect_error(
+  nn_hessian(fit_tiny, tiny_data, max_params = 0),
+  "`max_params` must be a positive integer."
+)
+expect_error(
+  nn_confint(fit_tiny, tiny_data, level = 1),
+  "`level` must be a number between 0 and 1."
+)
 
 binary_weights <- ifelse(iris2$Species == "versicolor", 2, 1)
 fit_binary <- nn_fit(
@@ -182,6 +223,10 @@ stopifnot(identical(fit_reg$metric_name, "rmse"))
 
 eval_reg <- nn_evaluate(fit_reg, mtcars)
 stopifnot(all(c("rmse", "mae", "rsq") %in% names(eval_reg$metrics)))
+expect_error(
+  nn_evaluate(fit_reg, mtcars[1:3, ], y = mtcars$mpg[1:2]),
+  "Outcome data must have one row per prediction row."
+)
 
 fit_huber <- nn_fit(
   mpg ~ wt + hp,
@@ -221,6 +266,18 @@ stopifnot(inherits(imp, "neuralnetwork_importance"))
 stopifnot(all(c("feature", "importance", "metric") %in% names(imp)))
 stopifnot(nrow(imp) == 2)
 stopifnot(all(imp$metric == "mae"))
+expect_error(
+  nn_permutation_importance(fit_reg, mtcars[1:3, ], y = mtcars$mpg[1:2]),
+  "Outcome data must have one row per prediction row."
+)
+expect_error(
+  nn_permutation_importance(fit_reg),
+  "`newdata` is required."
+)
+expect_error(
+  nn_permutation_importance(fit_reg, mtcars, n_repeats = Inf),
+  "`n_repeats` must be a positive integer."
+)
 
 epochs_seen <- 0L
 fit_callback <- nn_fit(
@@ -238,6 +295,18 @@ fit_callback <- nn_fit(
 stopifnot(isTRUE(fit_callback$stopped_early))
 stopifnot(identical(fit_callback$stop_reason, "callback"))
 stopifnot(epochs_seen == 2L)
+expect_error(
+  nn_fit(mpg ~ wt + hp, mtcars, hidden = 4, epochs = 1,
+         callbacks = function(state) list(stop = "yes"),
+         seed = 4, verbose = FALSE),
+  "Callback `stop` values must be TRUE or FALSE."
+)
+expect_error(
+  nn_fit(mpg ~ wt + hp, mtcars, hidden = 4, epochs = 1,
+         callbacks = function(state) list(learning_rate = Inf),
+         seed = 4, verbose = FALSE),
+  "Callback `learning_rate` values must be positive finite scalars."
+)
 
 tmp <- tempfile(fileext = ".rds")
 nn_save(fit_reg, tmp)
@@ -260,6 +329,28 @@ stopifnot(inherits(tuned, "neuralnetwork_tune"))
 stopifnot(inherits(tuned$best_model, "neuralnetwork"))
 stopifnot(nrow(tuned$results) == 2)
 stopifnot(all(tuned$results$metric == "balanced_accuracy"))
+stopifnot(all(tuned$results$success))
+
+tuned_continue <- nn_tune(
+  Species ~ .,
+  iris,
+  grid = list(hidden = list(4, -1), learning_rate = c(0.01)),
+  error_action = "continue",
+  epochs = 2,
+  validation_split = 0.2,
+  seed = 15,
+  verbose = FALSE
+)
+stopifnot(inherits(tuned_continue$best_model, "neuralnetwork"))
+stopifnot(sum(!tuned_continue$results$success) == 1L)
+stopifnot(any(grepl("`hidden` must contain positive integer layer sizes",
+                    tuned_continue$results$error, fixed = TRUE),
+              na.rm = TRUE))
+expect_error(
+  nn_tune(Species ~ ., iris, grid = list(hidden = list(-1)),
+          error_action = "continue", epochs = 1, verbose = FALSE),
+  "All tuning candidates failed or produced unavailable scores."
+)
 
 cv <- nn_cv(
   Species ~ .,
@@ -274,6 +365,19 @@ cv <- nn_cv(
 stopifnot(inherits(cv, "neuralnetwork_cv"))
 stopifnot(nrow(cv$results) == 3)
 stopifnot("macro_f1" %in% cv$results$metric)
+expect_error(
+  nn_cv(Species ~ ., iris, repeats = Inf, epochs = 1, verbose = FALSE),
+  "`repeats` must be a positive integer."
+)
+
+rare_cv <- data.frame(
+  x = seq_len(5),
+  y = factor(c("a", "a", "a", "b", "b"))
+)
+expect_error(
+  nn_cv(y ~ x, rare_cv, k = 3, epochs = 1, verbose = FALSE),
+  "`k` cannot exceed the smallest class size when `stratify = TRUE`."
+)
 
 matrix_fit <- nn_fit(
   as.matrix(iris[, 1:4]),
@@ -286,6 +390,37 @@ matrix_fit <- nn_fit(
 matrix_prob <- predict(matrix_fit, as.matrix(iris[1:3, 1:4]), type = "prob")
 stopifnot(is.matrix(matrix_prob))
 stopifnot(nrow(matrix_prob) == 3)
+
+bad_class_matrix <- nn_class_ind(iris$Species)
+bad_class_matrix[1, ] <- 0
+expect_error(
+  nn_fit(as.matrix(iris[, 1:4]), bad_class_matrix, task = "classification",
+         epochs = 1, verbose = FALSE),
+  "Rows of a classification matrix must sum to 1."
+)
+bad_class_matrix <- nn_class_ind(iris$Species)
+bad_class_matrix[1, 1] <- -0.1
+bad_class_matrix[1, 2] <- 1.1
+expect_error(
+  nn_fit(as.matrix(iris[, 1:4]), bad_class_matrix, task = "classification",
+         epochs = 1, verbose = FALSE),
+  "Classification matrices must contain class indicators or probabilities in [0, 1]."
+)
+
+factor_data <- data.frame(
+  y = factor(c("a", "b", "a", "b")),
+  x = factor(c("u", "v", "u", "v"))
+)
+factor_fit <- nn_fit(y ~ x, factor_data, hidden = 2, epochs = 2,
+                     seed = 16, verbose = FALSE)
+expect_error(
+  predict(factor_fit, data.frame(x = factor("w", levels = c("u", "v", "w")))),
+  "`newdata` contains factor levels not seen during fitting."
+)
+expect_error(
+  predict(factor_fit, data.frame(z = 1)),
+  "Could not prepare `newdata` with the fitted predictors."
+)
 
 new_level <- iris[1:2, ]
 new_level$Species <- factor(new_level$Species,
@@ -307,8 +442,57 @@ expect_error(
   "`hidden` must contain positive integer layer sizes"
 )
 expect_error(
+  nn_fit(Species ~ ., iris, hidden = "bad", verbose = FALSE),
+  "`hidden` must contain positive integer layer sizes"
+)
+expect_error(
   nn_fit(Species ~ ., iris, hidden = 0, dropout = 0.1, verbose = FALSE),
   "`dropout` must be 0 when `hidden = 0`."
+)
+expect_error(
+  nn_fit(Species ~ ., iris, dropout = NA_real_, verbose = FALSE),
+  "`dropout` must be numeric values in [0, 1)."
+)
+expect_error(
+  nn_fit(Species ~ ., iris, learning_rate = Inf, verbose = FALSE),
+  "`learning_rate` must be a positive finite number."
+)
+expect_error(
+  nn_fit(Species ~ ., iris, stepmax = Inf, verbose = FALSE),
+  "`stepmax` must be a positive integer when supplied."
+)
+expect_error(
+  nn_fit(Species ~ ., iris, beta1 = 1, verbose = FALSE),
+  "`beta1` must be in [0, 1)."
+)
+expect_error(
+  nn_fit(Species ~ ., iris, beta2 = NA_real_, verbose = FALSE),
+  "`beta2` must be in [0, 1)."
+)
+expect_error(
+  nn_fit(Species ~ ., iris, epsilon = 0, verbose = FALSE),
+  "`epsilon` must be a positive finite number."
+)
+expect_error(
+  nn_fit(mpg ~ wt + hp, mtcars, loss = "huber", huber_delta = Inf,
+         verbose = FALSE),
+  "`huber_delta` must be a positive finite number."
+)
+expect_error(
+  nn_fit(Species ~ ., iris, patience = 0, verbose = FALSE),
+  "`patience` must be a positive integer or Inf."
+)
+expect_error(
+  nn_fit(Species ~ ., iris, min_delta = -1, verbose = FALSE),
+  "`min_delta` must be a finite non-negative number."
+)
+expect_error(
+  nn_fit(Species ~ ., iris, scale = c(TRUE, FALSE), verbose = FALSE),
+  "`scale` must be TRUE or FALSE."
+)
+expect_error(
+  nn_fit(Species ~ ., iris, seed = NA_real_, verbose = FALSE),
+  "`seed` must be NULL or a non-negative integer."
 )
 expect_error(
   nn_fit(Species ~ ., iris, epochs = 1, sample_weight = rep(1, 3),
@@ -335,6 +519,11 @@ expect_error(
   nn_save(fit_reg, tempfile("missing", tmpdir = file.path(tempdir(), "nope"))),
   "The directory for `path` does not exist:"
 )
+
+stopifnot(identical(neuralnetwork:::.offset_seed(.Machine$integer.max, 0L),
+                    as.integer(.Machine$integer.max)))
+stopifnot(identical(neuralnetwork:::.offset_seed(.Machine$integer.max, 1L),
+                    1L))
 
 tmp_bad <- tempfile(fileext = ".rds")
 saveRDS(list(not = "a model"), tmp_bad)

@@ -12,7 +12,7 @@
 
 
 
-<title>A practical workflow with neuralnetwork</title>
+<title>Fitting models with neuralnetwork</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -337,21 +337,20 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 
 
 
-<h1 class="title toc-ignore">A practical workflow with
-neuralnetwork</h1>
+<h1 class="title toc-ignore">Fitting models with neuralnetwork</h1>
 
 
 
-<p><code>neuralnetwork</code> fits compact multilayer perceptrons with
-ordinary R inputs. It is aimed at tabular regression and classification
-problems where formula interfaces, predictable outputs, validation,
-tuning, and diagnostics matter as much as the training algorithm.</p>
+<p><code>neuralnetwork</code> fits multilayer perceptrons for tabular
+regression and classification. The examples below use base R data sets
+and keep the training runs short enough for <code>R CMD check</code>,
+but the same calls work with your own data frames and matrices.</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(neuralnetwork)</span></code></pre></div>
 <div id="multiclass-classification" class="section level2">
-<h2>Multiclass Classification</h2>
-<p>Start with the formula interface and automatic defaults. For small
-tabular data, <code>hidden = &quot;auto&quot;</code> and
-<code>optimizer = &quot;auto&quot;</code> are usually enough for a first pass.</p>
+<h2>Multiclass classification</h2>
+<p>Start with the formula interface. For small tabular data,
+<code>hidden = &quot;auto&quot;</code> and <code>optimizer = &quot;auto&quot;</code> are
+enough for a first fit.</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>fit_class <span class="ot">&lt;-</span> <span class="fu">nn_fit</span>(</span>
 <span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>  Species <span class="sc">~</span> .,</span>
 <span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>  <span class="at">data =</span> iris,</span>
@@ -369,12 +368,12 @@ tabular data, <code>hidden = &quot;auto&quot;</code> and
 <span id="cb2-15"><a href="#cb2-15" tabindex="-1"></a><span class="co">#&gt;   Layers:     4 -&gt; 4 -&gt; 3</span></span>
 <span id="cb2-16"><a href="#cb2-16" tabindex="-1"></a><span class="co">#&gt;   Optimizer:  lbfgs | activation: tanh | backend: rcpp</span></span>
 <span id="cb2-17"><a href="#cb2-17" tabindex="-1"></a><span class="co">#&gt;   Loss:       cross_entropy</span></span>
-<span id="cb2-18"><a href="#cb2-18" tabindex="-1"></a><span class="co">#&gt;   Trained:    13 epochs | best epoch: 1</span></span>
-<span id="cb2-19"><a href="#cb2-19" tabindex="-1"></a><span class="co">#&gt;   Final:      train loss 0.014447 | accuracy 0.99167</span></span>
-<span id="cb2-20"><a href="#cb2-20" tabindex="-1"></a><span class="co">#&gt;               validation loss 0.38622 | validation accuracy 0.9</span></span></code></pre></div>
-<p>The printed model is meant to be read at a glance. It shows the task,
-architecture, optimizer, loss, backend, number of epochs, best epoch,
-and final training or validation metrics.</p>
+<span id="cb2-18"><a href="#cb2-18" tabindex="-1"></a><span class="co">#&gt;   Trained:    13 function evaluations</span></span>
+<span id="cb2-19"><a href="#cb2-19" tabindex="-1"></a><span class="co">#&gt;   Convergence: code 1 | message: NEW_X</span></span>
+<span id="cb2-20"><a href="#cb2-20" tabindex="-1"></a><span class="co">#&gt;   Final:      train loss 0.014447 | accuracy 0.99167</span></span>
+<span id="cb2-21"><a href="#cb2-21" tabindex="-1"></a><span class="co">#&gt;               validation loss 0.38622 | validation accuracy 0.9</span></span></code></pre></div>
+<p>The printed model reports the task, architecture, optimizer, loss,
+backend, training length, and final training or validation metrics.</p>
 <p>Use <code>predict()</code> for classes or probabilities.</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="fu">predict</span>(fit_class, iris[<span class="dv">1</span><span class="sc">:</span><span class="dv">5</span>, ], <span class="at">type =</span> <span class="st">&quot;class&quot;</span>)</span>
 <span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a><span class="co">#&gt; [1] setosa setosa setosa setosa setosa</span></span>
@@ -386,9 +385,9 @@ and final training or validation metrics.</p>
 <span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a><span class="co">#&gt; [3,]      1          0         0</span></span>
 <span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a><span class="co">#&gt; [4,]      1          0         0</span></span>
 <span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a><span class="co">#&gt; [5,]      1          0         0</span></span></code></pre></div>
-<p><code>nn_evaluate()</code> returns task-aware metrics. Multiclass
-classification includes accuracy, balanced accuracy, macro precision,
-macro recall, macro F1, and log loss.</p>
+<p><code>nn_evaluate()</code> returns metrics for the fitted task.
+Multiclass classification includes accuracy, balanced accuracy, macro
+precision, macro recall, macro F1, and log loss.</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>ev_class <span class="ot">&lt;-</span> <span class="fu">nn_evaluate</span>(fit_class, iris)</span>
 <span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>ev_class</span>
 <span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a><span class="co">#&gt; neuralnetwork evaluation</span></span>
@@ -407,12 +406,12 @@ macro recall, macro F1, and log loss.</p>
 <span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a><span class="co">#&gt;   setosa         49          1         0</span></span>
 <span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a><span class="co">#&gt;   versicolor      0         48         2</span></span>
 <span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a><span class="co">#&gt;   virginica       0          1        49</span></span></code></pre></div>
-<p>For imbalanced classification problems, balanced accuracy or F1 is
-often more informative than raw accuracy. For calibrated probability
-workflows, inspect log loss as well.</p>
+<p>For imbalanced classification, balanced accuracy or F1 is usually
+more useful than raw accuracy. For probability forecasts, inspect log
+loss as well.</p>
 </div>
 <div id="binary-classification-and-weights" class="section level2">
-<h2>Binary Classification and Weights</h2>
+<h2>Binary classification and weights</h2>
 <p>Two-class outcomes use a one-output sigmoid model internally. The
 public prediction API still returns a two-column probability matrix.</p>
 <div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>iris_binary <span class="ot">&lt;-</span> <span class="fu">subset</span>(iris, Species <span class="sc">!=</span> <span class="st">&quot;virginica&quot;</span>)</span>
@@ -501,7 +500,7 @@ scale.</p>
 <span id="cb6-31"><a href="#cb6-31" tabindex="-1"></a><span class="co">#&gt;     rsq 0.74381</span></span></code></pre></div>
 </div>
 <div id="robust-regression" class="section level2">
-<h2>Robust Regression</h2>
+<h2>Robust regression</h2>
 <p>Squared error is the default regression loss. If a few observations
 may be unusually influential, use Huber loss.</p>
 <div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>mtcars_outlier <span class="ot">&lt;-</span> mtcars</span>
@@ -536,11 +535,11 @@ may be unusually influential, use Huber loss.</p>
 <span id="cb7-30"><a href="#cb7-30" tabindex="-1"></a><span class="co">#&gt;           0.01       FALSE</span></span></code></pre></div>
 </div>
 <div id="training-controls" class="section level2">
-<h2>Training Controls</h2>
+<h2>Training controls</h2>
 <p>The training loop supports dropout, L2 regularization, gradient
 clipping, learning-rate decay, validation splits, early stopping, and
-callbacks. This example stops after two epochs so the mechanism is
-visible without making the vignette slow.</p>
+callbacks. This example stops after two epochs so the callback behavior
+is visible without making the vignette slow.</p>
 <div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>epochs_seen <span class="ot">&lt;-</span> <span class="dv">0</span><span class="dt">L</span></span>
 <span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a></span>
 <span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>fit_callback <span class="ot">&lt;-</span> <span class="fu">nn_fit</span>(</span>
@@ -576,21 +575,24 @@ visible without making the vignette slow.</p>
 <span id="cb8-33"><a href="#cb8-33" tabindex="-1"></a><span class="co">#&gt;   Final:      train loss 0.52135 | rmse 6.4176</span></span>
 <span id="cb8-34"><a href="#cb8-34" tabindex="-1"></a><span class="co">#&gt;               validation loss 0.13129 | validation rmse 3.2201</span></span>
 <span id="cb8-35"><a href="#cb8-35" tabindex="-1"></a><span class="co">#&gt;   Stopped:    callback</span></span></code></pre></div>
-<p>Some useful starting points:</p>
+<p>Training choices:</p>
 <ul>
-<li>Use <code>validation_split = 0.2</code> when you want validation
-loss, early stopping, or validation-based tuning.</li>
+<li>Use <code>validation_split = 0.2</code> for validation loss, early
+stopping, or validation-based tuning.</li>
+<li>When the optimizer resolves to L-BFGS, <code>epochs</code> is the
+<code>stats::optim()</code> iteration limit and printed training length
+is reported as function evaluations.</li>
 <li>Use <code>gradient_clip</code> when gradients can spike.</li>
 <li>Use <code>dropout</code> and <code>l2</code> when the model begins
 to overfit.</li>
-<li>Use <code>learning_rate_decay</code> or a callback when a fixed
-learning rate is too blunt.</li>
+<li>Use <code>learning_rate_decay</code> or a callback when validation
+loss stalls.</li>
 </ul>
 </div>
 <div id="tuning-and-cross-validation" class="section level2">
-<h2>Tuning and Cross-Validation</h2>
-<p>Use <code>nn_tune()</code> for a compact grid search. Classification
-metrics include <code>accuracy</code>, <code>balanced_accuracy</code>,
+<h2>Tuning and cross-validation</h2>
+<p>Use <code>nn_tune()</code> for a grid search. Classification metrics
+include <code>accuracy</code>, <code>balanced_accuracy</code>,
 <code>f1</code>, and <code>log_loss</code>. Regression metrics include
 <code>rmse</code>, <code>mae</code>, and <code>rsq</code>.</p>
 <div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>tuned <span class="ot">&lt;-</span> <span class="fu">nn_tune</span>(</span>
@@ -614,13 +616,17 @@ metrics include <code>accuracy</code>, <code>balanced_accuracy</code>,
 <span id="cb9-19"><a href="#cb9-19" tabindex="-1"></a><span class="co">#&gt;   Best score: 0.91534</span></span>
 <span id="cb9-20"><a href="#cb9-20" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb9-21"><a href="#cb9-21" tabindex="-1"></a><span class="co">#&gt; Top candidates:</span></span>
-<span id="cb9-22"><a href="#cb9-22" tabindex="-1"></a><span class="co">#&gt;  hidden learning_rate            metric   score rank</span></span>
-<span id="cb9-23"><a href="#cb9-23" tabindex="-1"></a><span class="co">#&gt;       4          0.01 balanced_accuracy 0.91534    1</span></span>
-<span id="cb9-24"><a href="#cb9-24" tabindex="-1"></a><span class="co">#&gt;    6, 3          0.01 balanced_accuracy 0.88889    2</span></span>
+<span id="cb9-22"><a href="#cb9-22" tabindex="-1"></a><span class="co">#&gt;  hidden learning_rate success            metric   score error rank</span></span>
+<span id="cb9-23"><a href="#cb9-23" tabindex="-1"></a><span class="co">#&gt;       4          0.01    TRUE balanced_accuracy 0.91534  &lt;NA&gt;    1</span></span>
+<span id="cb9-24"><a href="#cb9-24" tabindex="-1"></a><span class="co">#&gt;    6, 3          0.01    TRUE balanced_accuracy 0.88889  &lt;NA&gt;    2</span></span>
 <span id="cb9-25"><a href="#cb9-25" tabindex="-1"></a>tuned<span class="sc">$</span>best_params</span>
 <span id="cb9-26"><a href="#cb9-26" tabindex="-1"></a><span class="co">#&gt;   hidden learning_rate</span></span>
 <span id="cb9-27"><a href="#cb9-27" tabindex="-1"></a><span class="co">#&gt; 1      4          0.01</span></span></code></pre></div>
-<p>Use <code>nn_cv()</code> when you want fold-level estimates.</p>
+<p>When exploring a wider grid, <code>error_action = &quot;continue&quot;</code>
+keeps invalid candidate combinations in the result table and ranks the
+usable fits. The default remains strict, so a bad grid fails before it
+produces misleading results.</p>
+<p>Use <code>nn_cv()</code> for fold-level estimates.</p>
 <div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a>cv <span class="ot">&lt;-</span> <span class="fu">nn_cv</span>(</span>
 <span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>  Species <span class="sc">~</span> .,</span>
 <span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>  <span class="at">data =</span> iris,</span>
@@ -641,7 +647,7 @@ metrics include <code>accuracy</code>, <code>balanced_accuracy</code>,
 <span id="cb10-18"><a href="#cb10-18" tabindex="-1"></a><span class="co">#&gt;  macro_f1 0.86362 0.10213</span></span></code></pre></div>
 </div>
 <div id="permutation-importance" class="section level2">
-<h2>Permutation Importance</h2>
+<h2>Permutation importance</h2>
 <p>Permutation importance measures how much a metric changes when one
 feature is shuffled.</p>
 <div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a>imp <span class="ot">&lt;-</span> <span class="fu">nn_permutation_importance</span>(</span>
@@ -663,9 +669,9 @@ feature is shuffled.</p>
 <span id="cb11-17"><a href="#cb11-17" tabindex="-1"></a><span class="co">#&gt;       hp    0.54879    2.281   2.8298    mae         2</span></span></code></pre></div>
 </div>
 <div id="save-load-and-inspect" class="section level2">
-<h2>Save, Load, and Inspect</h2>
-<p>Models are ordinary R objects. Use <code>nn_save()</code> and
-<code>nn_load()</code> when you want a small checked wrapper around
+<h2>Save, load, and inspect</h2>
+<p>Models are regular R objects. <code>nn_save()</code> and
+<code>nn_load()</code> add package-level checks around
 <code>saveRDS()</code> and <code>readRDS()</code>.</p>
 <div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a>model_path <span class="ot">&lt;-</span> <span class="fu">tempfile</span>(<span class="at">fileext =</span> <span class="st">&quot;.rds&quot;</span>)</span>
 <span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a><span class="fu">nn_save</span>(fit_reg, model_path)</span>
@@ -676,8 +682,8 @@ feature is shuffled.</p>
 <span id="cb12-7"><a href="#cb12-7" tabindex="-1"></a>  <span class="fu">predict</span>(fit_loaded, mtcars[<span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>, ])</span>
 <span id="cb12-8"><a href="#cb12-8" tabindex="-1"></a>)</span>
 <span id="cb12-9"><a href="#cb12-9" tabindex="-1"></a><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
-<p>The package also includes compatibility helpers for common
-<code>nnet</code> and <code>neuralnet</code> workflows.</p>
+<p>The package includes compatibility helpers for common
+<code>nnet</code> and <code>neuralnet</code> tasks.</p>
 <div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a><span class="fu">nn_class_ind</span>(iris<span class="sc">$</span>Species[<span class="dv">1</span><span class="sc">:</span><span class="dv">4</span>])</span>
 <span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a><span class="co">#&gt;      setosa versicolor virginica</span></span>
 <span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a><span class="co">#&gt; [1,]      1          0         0</span></span>
@@ -694,9 +700,8 @@ feature is shuffled.</p>
 <span id="cb13-14"><a href="#cb13-14" tabindex="-1"></a><span class="co">#&gt; [2,]      1          0         0</span></span></code></pre></div>
 </div>
 <div id="function-map" class="section level2">
-<h2>Function Map</h2>
-<p>Use this as a quick map when moving from older shallow-network
-workflows.</p>
+<h2>Function map</h2>
+<p>Function names:</p>
 <table>
 <thead>
 <tr class="header">
@@ -747,11 +752,10 @@ workflows.</p>
 </tr>
 </tbody>
 </table>
-<p>For most projects, start with <code>nn_fit()</code>, inspect
-<code>nn_evaluate()</code>, and add <code>nn_tune()</code> or
-<code>nn_cv()</code> only when the first model is promising enough to
-justify the extra computation.</p>
-<p>For reference-style help, see <code>?neuralnetwork</code>,
+<p>Start with <code>nn_fit()</code>, inspect <code>nn_evaluate()</code>,
+and add <code>nn_tune()</code> or <code>nn_cv()</code> when the first
+model is worth more computation.</p>
+<p>Reference help: <code>?neuralnetwork</code>,
 <code>?neuralnetwork-metrics</code>,
 <code>?neuralnetwork-callbacks</code>, and
 <code>?neuralnetwork-objects</code>.</p>

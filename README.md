@@ -1,10 +1,11 @@
 # neuralnetwork
 
-`neuralnetwork` fits compact multilayer perceptrons for everyday R workflows:
-formula input, tabular data, regression, classification, tuning, cross
-validation, and readable model objects. It is designed for problems where
-`nnet` feels too small, `neuralnet` feels too manual, and a full deep-learning
-framework would be more machinery than the job needs.
+`neuralnetwork` fits multilayer perceptrons for tabular data in R. It accepts
+formulas, data frames, matrices, and vectors; handles regression and
+classification; and includes tuning, cross-validation, metrics, feature
+importance, and model save/load helpers. It is meant for users who need more
+than `nnet`'s single-hidden-layer interface or `neuralnet`'s manual training
+style, but do not want to bring in a full deep-learning stack.
 
 ## Install
 
@@ -15,10 +16,10 @@ install.packages("neuralnetwork")
 To install the local source tarball:
 
 ```r
-install.packages("neuralnetwork_0.1.0.tar.gz", repos = NULL, type = "source")
+install.packages("neuralnetwork_0.1.1.tar.gz", repos = NULL, type = "source")
 ```
 
-## Quick Start
+## Quick start
 
 ```r
 library(neuralnetwork)
@@ -42,15 +43,16 @@ ev <- nn_evaluate(fit, iris)
 ev
 ```
 
-The printed model gives the architecture, optimizer, loss, backend, training
-length, final training score, and validation score when available. The
-evaluation object prints metrics as a small table and includes the confusion
-matrix for classification.
+The printed model reports the architecture, optimizer, loss, backend, training
+length, final training score, and validation score when available.
+`nn_evaluate()` returns the metrics as a named vector and prints a compact
+confusion matrix for classification.
 
 ## Regression
 
-Regression uses the same interface. Targets can be scaled during training and
-returned on the original scale for prediction.
+For regression, put a numeric response on the left side of the formula.
+Training can scale the target internally; predictions are returned on the
+original response scale.
 
 ```r
 fit_reg <- nn_fit(
@@ -88,22 +90,25 @@ fit_huber <- nn_fit(
 )
 ```
 
-## Choosing Settings
+## Choosing settings
 
-Good first defaults:
+Reasonable first choices:
 
-- `hidden = "auto"` for a compact task-aware architecture.
+- `hidden = "auto"` for a small architecture chosen from the task and input
+  width.
 - `optimizer = "auto"` for L-BFGS on small deterministic problems and Adam
   when using stochastic features such as dropout or callbacks.
-- `validation_split = 0.2` when you want validation loss, early stopping, or
+- For L-BFGS fits, `epochs` is the optimizer iteration limit and printed
+  training length is reported as function evaluations.
+- `validation_split = 0.2` for validation loss, early stopping, or
   validation-based tuning.
 - `metric = "balanced_accuracy"` for imbalanced classification, `metric = "f1"`
-  when the positive class matters, and `metric = "mae"` or `metric = "rmse"` for
-  regression.
+  when the positive class is the focus, and `metric = "mae"` or
+  `metric = "rmse"` for regression.
 - `loss = "huber"` for regression data where outliers may dominate squared
   error.
 
-## Tuning and Validation
+## Tuning and validation
 
 ```r
 tuned <- nn_tune(
@@ -124,6 +129,9 @@ tuned
 tuned$best_model
 ```
 
+For exploratory grids, `error_action = "continue"` keeps candidate failures in
+the results table while ranking the usable fits.
+
 ```r
 cv <- nn_cv(
   Species ~ .,
@@ -139,7 +147,7 @@ cv <- nn_cv(
 cv
 ```
 
-## Feature Importance
+## Feature importance
 
 ```r
 imp <- nn_permutation_importance(
@@ -153,7 +161,7 @@ imp <- nn_permutation_importance(
 imp
 ```
 
-## Function Map
+## Function map
 
 | Need | Use |
 |---|---|
@@ -166,7 +174,7 @@ imp
 | Save and load | `nn_save()`, `nn_load()` |
 | Use `nnet` / `neuralnet` style helpers | `nn_multinom()`, `nn_compute()`, `nn_generalized_weights()` |
 
-## What Is Included
+## What's included
 
 - Formula, data frame, matrix, and vector inputs.
 - Regression, binary classification, and multiclass classification.
@@ -181,13 +189,14 @@ imp
 - Accuracy, balanced accuracy, macro F1, log loss, RMSE, MAE, and R-squared.
 - Tuning, repeated k-fold cross-validation, permutation importance, save/load
   helpers, and S3 `predict()`, `print()`, `plot()`, `summary()`, and `coef()`.
-- Compatibility helpers for common `nnet` and `neuralnet` workflows:
+- Training history plus optimizer convergence metadata for inspecting fitted
+  models, including L-BFGS convergence codes from `stats::optim()`.
+- Compatibility helpers for common `nnet` and `neuralnet` tasks:
   `nn_multinom()`, `nn_class_ind()`, `nn_which_is_max()`, `nn_compute()`,
   `nn_generalized_weights()`, `nn_gwplot()`, `nn_hessian()`, and
   `nn_confint()`.
 
-See `vignette("neuralnetwork")` for a fuller walkthrough.
+Run `vignette("neuralnetwork")` for the longer worked example.
 
-For reference-style help inside R, see `?neuralnetwork`,
-`?neuralnetwork-metrics`, `?neuralnetwork-callbacks`, and
-`?neuralnetwork-objects`.
+Reference help inside R: `?neuralnetwork`, `?neuralnetwork-metrics`,
+`?neuralnetwork-callbacks`, and `?neuralnetwork-objects`.

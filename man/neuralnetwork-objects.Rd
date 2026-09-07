@@ -27,6 +27,10 @@ internally.}
 \item{\code{blueprint}}{Information used to prepare new data consistently.}
 \item{\code{classes}}{Classification levels, or \code{NULL} for regression.}
 \item{\code{history}}{Data frame with per-epoch training diagnostics.}
+\item{\code{training_units}}{Training-history unit. Ordinary optimizers use
+\code{"epochs"}; L-BFGS uses \code{"function_evaluations"}.}
+\item{\code{convergence}}{List with optimizer convergence metadata. For
+L-BFGS fits, \code{code} and \code{message} come from \code{\link[stats]{optim}}.}
 \item{\code{best_epoch}}{Epoch with the best monitored loss.}
 \item{\code{stopped_early}}{Whether training stopped before the requested
 number of epochs.}

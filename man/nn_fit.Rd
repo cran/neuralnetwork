@@ -45,13 +45,16 @@ nn_fit(
 }
 \arguments{
 \item{x}{A formula, data frame, matrix, or numeric vector of predictors.}
-\item{y}{Outcome vector or matrix. Required when \code{x} is not a formula.}
+\item{y}{Outcome vector or matrix. Required when \code{x} is not a formula.
+For multiclass classification matrices, rows must be one-hot indicators or
+class probabilities that sum to 1.}
 \item{data}{Data frame used when \code{x} is a formula.}
 \item{hidden}{Integer vector giving hidden layer sizes, \code{0} for no hidden
-layer, or \code{"auto"} for a compact task-aware default.}
+layer, or \code{"auto"} for a small default chosen from the task and input
+width.}
 \item{task}{One of \code{"auto"}, \code{"classification"}, or \code{"regression"}.}
-\item{activation}{Hidden-layer activation. \code{"auto"} chooses a practical
-default from the task.}
+\item{activation}{Hidden-layer activation. \code{"auto"} chooses a default
+from the task and hidden-layer layout.}
 \item{optimizer}{Optimizer, one of \code{"auto"}, \code{"adam"}, \code{"sgd"},
 \code{"momentum"}, \code{"nesterov"}, \code{"rprop"}, \code{"grprop"}, or
 \code{"lbfgs"}. \code{"auto"} uses
@@ -60,34 +63,40 @@ training features such as dropout or callbacks are used.}
 \item{backend}{Forward-pass backend. \code{"auto"} uses Rcpp when available.}
 \item{loss}{Regression loss. \code{"auto"} uses squared error; \code{"huber"}
 uses a robust Huber loss. Classification uses cross-entropy internally.}
-\item{huber_delta}{Positive Huber transition point, in the training target
-scale when \code{y_scale = TRUE}.}
-\item{epochs}{Number of training epochs.}
+\item{huber_delta}{Positive finite Huber transition point, in the training
+target scale when \code{y_scale = TRUE}.}
+\item{epochs}{Positive integer number of training epochs.}
 \item{stepmax}{Optional \pkg{neuralnet}-style alias for \code{epochs}.}
-\item{batch_size}{Mini-batch size.}
-\item{learning_rate}{Optimizer learning rate.}
-\item{momentum}{Momentum coefficient for \code{"momentum"} and
+\item{batch_size}{Positive integer mini-batch size.}
+\item{learning_rate}{Positive finite optimizer learning rate.}
+\item{momentum}{Momentum coefficient in \code{[0, 1)} for \code{"momentum"} and
 \code{"nesterov"} optimizers.}
-\item{beta1, beta2, epsilon}{Adam optimizer parameters.}
-\item{l2}{L2 regularization strength.}
+\item{beta1, beta2}{Adam exponential-decay coefficients in \code{[0, 1)}.}
+\item{epsilon}{Positive finite Adam denominator stabilizer.}
+\item{l2}{Finite non-negative L2 regularization strength.}
 \item{dropout}{Dropout probability. Either one value or one value per hidden layer.}
 \item{sample_weight}{Optional non-negative row weights.}
 \item{class_weight}{Optional classification weights. Use \code{"balanced"} or
 a numeric vector with one value per class.}
 \item{gradient_clip}{Global gradient-norm clip value. Use \code{Inf} to disable.}
-\item{learning_rate_decay}{Per-epoch learning-rate decay.}
-\item{threshold}{Optional gradient-norm convergence threshold. A value of
-\code{0} disables this stopping rule.}
+\item{learning_rate_decay}{Finite non-negative per-epoch learning-rate decay.}
+\item{threshold}{Finite non-negative gradient-norm convergence threshold. A
+value of \code{0} disables this stopping rule.}
 \item{validation_split}{Fraction of rows held out for validation.}
-\item{patience}{Number of unimproved epochs before early stopping.}
-\item{min_delta}{Minimum monitored-loss improvement.}
-\item{scale}{Whether to center and scale predictors using the training split.}
-\item{y_scale}{Whether to center and scale regression outcomes during training.}
-\item{shuffle}{Whether to shuffle rows each epoch.}
-\item{seed}{Optional random seed.}
+\item{patience}{Positive integer number of unimproved epochs before early
+stopping, or \code{Inf} to disable patience-based stopping.}
+\item{min_delta}{Finite non-negative minimum monitored-loss improvement.}
+\item{scale}{Single \code{TRUE} or \code{FALSE}: whether to center and scale
+predictors using the training split.}
+\item{y_scale}{Single \code{TRUE} or \code{FALSE}: whether to center and scale
+regression outcomes during training.}
+\item{shuffle}{Single \code{TRUE} or \code{FALSE}: whether to shuffle rows each
+epoch.}
+\item{seed}{Optional non-negative integer random seed.}
 \item{callbacks}{A function or list of functions called once per epoch. See
 \code{\link{neuralnetwork-callbacks}}.}
-\item{verbose}{Whether to print progress messages.}
+\item{verbose}{Single \code{TRUE} or \code{FALSE}: whether to print progress
+messages.}
 }
 \details{
 \code{nn_fit()} accepts either a formula plus data, or explicit predictor and
@@ -99,13 +108,21 @@ When \code{task = "auto"}, factor, character, and logical outcomes are treated
 as classification. Numeric vectors and matrices are treated as regression.
 Two-class classification uses a one-output sigmoid model internally, while
 \code{predict(type = "prob")} still returns a two-column probability matrix.
-Multiclass classification uses a softmax output.
+Multiclass classification uses a softmax output. If \code{task} is set to
+\code{"classification"} and \code{y} is a multi-column matrix, each row must be
+a one-hot class indicator or a probability vector.
 
-\code{hidden = "auto"} chooses a small task-aware architecture. Use an integer
-vector such as \code{c(16, 8)} for multiple hidden layers, or \code{0} for no
-hidden layer. \code{optimizer = "auto"} uses L-BFGS for small deterministic
+\code{hidden = "auto"} chooses a small architecture from the task and input
+width. Use an integer vector such as \code{c(16, 8)} for multiple hidden
+layers, or \code{0} for no hidden layer. \code{optimizer = "auto"} uses L-BFGS
+for small deterministic
 tabular models and Adam when stochastic training features such as dropout or
 callbacks are used.
+
+For L-BFGS fits, \code{epochs} and \code{stepmax} are passed to
+\code{\link[stats]{optim}} as the iteration limit rather than interpreted as
+mini-batch epochs. The printed model and \code{summary()} report function
+evaluations for those fits.
 
 For regression, \code{loss = "huber"} can be useful when a few observations are
 unusually influential. If \code{y_scale = TRUE}, \code{huber_delta} is measured

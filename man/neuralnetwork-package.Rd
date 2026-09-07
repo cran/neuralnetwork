@@ -2,17 +2,17 @@
 \alias{neuralnetwork-package}
 \alias{neuralnetwork}
 \docType{package}
-\title{Compact neural networks for tabular R workflows}
+\title{Compact neural networks for tabular R data}
 \description{
-\pkg{neuralnetwork} fits compact multilayer perceptrons for regression,
-binary classification, and multiclass classification. It keeps ordinary R
-interfaces such as formulas, data frames, matrices, S3 prediction methods, and
-small model objects, while adding practical training tools such as modern
-optimizers, validation splits, early stopping, robust regression, tuning,
-cross-validation, and permutation importance.
+\pkg{neuralnetwork} fits small multilayer perceptrons for tabular regression,
+binary classification, and multiclass classification. Inputs can be formulas,
+data frames, matrices, or vectors. Fitted objects support S3 prediction
+methods, metrics, tuning, cross-validation, feature importance, save/load
+helpers, and compatibility helpers for common \pkg{nnet} and
+\pkg{neuralnet} tasks.
 }
 \details{
-The main entry point is \code{\link{nn_fit}}. A typical workflow is:
+The main entry point is \code{\link{nn_fit}}. A usual analysis has these steps:
 
 \enumerate{
 \item Fit a model with \code{\link{nn_fit}}.
@@ -23,10 +23,11 @@ The main entry point is \code{\link{nn_fit}}. A typical workflow is:
 \item Inspect feature importance with \code{\link{nn_permutation_importance}}.
 }
 
-Automatic defaults are deliberately compact. \code{hidden = "auto"} chooses a
-small task-aware hidden layer layout, \code{optimizer = "auto"} uses L-BFGS for
-small deterministic tabular models and Adam for stochastic training features,
-and \code{backend = "auto"} uses the Rcpp forward-pass backend when available.
+The automatic defaults keep models small. \code{hidden = "auto"} chooses a
+hidden-layer layout from the task and input width, \code{optimizer = "auto"}
+uses L-BFGS for small deterministic tabular models and Adam for stochastic
+training features, and \code{backend = "auto"} uses the Rcpp forward-pass
+backend when available.
 
 For users coming from \pkg{nnet} or \pkg{neuralnet}, the package includes helper
 functions such as \code{\link{nn_multinom}}, \code{\link{nn_class_ind}},

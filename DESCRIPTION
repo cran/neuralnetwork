@@ -1,6 +1,6 @@
 Package: neuralnetwork
 Title: Fast Compact Multilayer Perceptrons
-Version: 0.1.0
+Version: 0.1.1
 Authors@R: c(
     person(given = "Feng", family = "Ji",
            role = c("aut", "cre"), email = "f.ji@utoronto.ca")
@@ -28,8 +28,8 @@ LinkingTo: Rcpp
 Suggests: knitr, rmarkdown
 VignetteBuilder: knitr
 NeedsCompilation: yes
-Packaged: 2026-06-15 13:25:04 UTC; jifeng3
+Packaged: 2026-09-07 02:54:35 UTC; jifeng3
 Author: Feng Ji [aut, cre]
 Maintainer: Feng Ji <f.ji@utoronto.ca>
 Repository: CRAN
-Date/Publication: 2026-06-20 14:10:08 UTC
+Date/Publication: 2026-09-07 03:20:02 UTC
