@@ -16,7 +16,7 @@ install.packages("neuralnetwork")
 To install the local source tarball:
 
 ```r
-install.packages("neuralnetwork_0.1.1.tar.gz", repos = NULL, type = "source")
+install.packages("neuralnetwork_0.1.4.tar.gz", repos = NULL, type = "source")
 ```
 
 ## Quick start
@@ -44,9 +44,29 @@ ev
 ```
 
 The printed model reports the architecture, optimizer, loss, backend, training
-length, final training score, and validation score when available.
+length, and the selected checkpoint's training and validation scores. These
+scores need not come from the last epoch. Epoch optimizers store their trajectory
+in `fit$history`; L-BFGS stores final diagnostics in one row.
 `nn_evaluate()` returns the metrics as a named vector and prints a compact
 confusion matrix for classification.
+
+This call scores all of `iris`, including the rows used for training. It checks
+the workflow, not performance on new observations. Use `nn_cv()` for fold-level
+estimates, and reserve an untouched test set before tuning for a final score.
+
+Macro precision, recall, and F1 include all fitted classes. A class that is
+never predicted contributes zero instead of disappearing from the average.
+Class-wise zero denominators return zero. Balanced accuracy averages recall
+over classes present in the truth, so it can differ from macro recall when an
+evaluation set omits a fitted class. See `help("neuralnetwork-metrics")` for
+the formulas and a worked example.
+
+Row and class weights remain effective with one-row mini-batches. The data
+gradient uses the full training-weight sum rather than normalizing each batch
+by its own weights. Zero-weight training rows are omitted from training,
+scalers and fitted formula bases. Inputs must still pass encoding checks.
+Finite gradient clipping selects Adam under `optimizer = "auto"`; explicit
+L-BFGS rejects clipping rather than ignoring it.
 
 ## Regression
 
@@ -195,6 +215,27 @@ imp
   `nn_multinom()`, `nn_class_ind()`, `nn_which_is_max()`, `nn_compute()`,
   `nn_generalized_weights()`, `nn_gwplot()`, `nn_hessian()`, and
   `nn_confint()`.
+
+## Numerical conventions and limits
+
+Evaluation, tuning and cross-validation use the same metric definitions.
+Tuning candidates share one holdout, and cross-validation splits row weights
+along with observations. Undefined scores remain visible rather than silently
+disappearing. Named predictor and outcome columns must match the fitted model.
+Formula transformations and contrasts are reused at prediction time.
+
+Multi-output RMSE averages over rows and outputs. R-squared pools output
+variation after centering each column separately; constant truth returns `NA`.
+`metric = "loss"` uses unpenalized fitted data loss, including Huber loss,
+on the training target scale. It is not an alias for RMSE.
+
+`nn_confint()` is limited to converged, unweighted, unregularized no-hidden-layer
+linear or binary logistic L-BFGS fits. It requires the original training data
+and refuses singular or saturated fits. `nn_hessian()` is a curvature
+diagnostic, not an automatic covariance estimator for a hidden-layer network.
+Input sensitivities describe encoded-feature derivatives, not `neuralnet`'s
+log-odds generalized weights. These helpers are not drop-in inferential
+replacements for every function in `nnet` or `neuralnet`.
 
 Run `vignette("neuralnetwork")` for the longer worked example.
 

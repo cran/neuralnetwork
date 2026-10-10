@@ -14,7 +14,8 @@ nn_permutation_importance(
   metric = c("auto", "loss", "accuracy", "balanced_accuracy",
              "log_loss", "f1", "rmse", "mae", "rsq"),
   n_repeats = 5,
-  seed = NULL
+  seed = NULL,
+  sample_weight = NULL
 )
 }
 \arguments{
@@ -26,6 +27,7 @@ response.}
 \item{metric}{Metric used to score the permutations.}
 \item{n_repeats}{Positive integer number of permutations per feature.}
 \item{seed}{Optional non-negative integer random seed.}
+\item{sample_weight}{Optional row weights, as in \code{\link{nn_evaluate}}.}
 }
 \details{
 The baseline metric is computed once on \code{newdata}. Then each encoded model
@@ -38,10 +40,14 @@ R-squared, smaller permuted values are worse.
 When a formula or data-frame model contains factor predictors, importance is
 computed on the encoded model-matrix columns rather than on the original factor
 as a single group.
+Single-row permutations leave predictors unchanged. A model without input
+columns returns a zero-row importance table. An undefined baseline metric,
+such as R-squared for constant truth, is an error rather than an importance
+estimate.
 }
 \value{
-A data frame of class \code{neuralnetwork_importance}, sorted by decreasing
-importance, with columns:
+A data frame of class \code{neuralnetwork_importance}.
+Rows are sorted by decreasing importance, with columns:
 \describe{
 \item{\code{feature}}{Encoded feature name.}
 \item{\code{importance}}{Metric degradation caused by permutation.}

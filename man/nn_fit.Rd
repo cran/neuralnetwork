@@ -11,7 +11,8 @@ nn_fit(
   data = NULL,
   hidden = "auto",
   task = c("auto", "classification", "regression"),
-  activation = c("auto", "relu", "tanh", "sigmoid", "leaky_relu"),
+  activation = c("auto", "relu", "tanh", "sigmoid",
+                 "leaky_relu"),
   optimizer = c("auto", "adam", "sgd", "momentum", "nesterov",
                 "rprop", "grprop", "lbfgs"),
   backend = c("auto", "rcpp", "r"),
@@ -40,7 +41,8 @@ nn_fit(
   shuffle = TRUE,
   seed = NULL,
   callbacks = NULL,
-  verbose = TRUE
+  verbose = TRUE,
+  validation_rows = NULL
 )
 }
 \arguments{
@@ -75,7 +77,8 @@ target scale when \code{y_scale = TRUE}.}
 \item{epsilon}{Positive finite Adam denominator stabilizer.}
 \item{l2}{Finite non-negative L2 regularization strength.}
 \item{dropout}{Dropout probability. Either one value or one value per hidden layer.}
-\item{sample_weight}{Optional non-negative row weights.}
+\item{sample_weight}{Optional finite non-negative row weights. Zero-weight
+training rows are excluded from training and fitted preprocessing.}
 \item{class_weight}{Optional classification weights. Use \code{"balanced"} or
 a numeric vector with one value per class.}
 \item{gradient_clip}{Global gradient-norm clip value. Use \code{Inf} to disable.}
@@ -93,16 +96,30 @@ regression outcomes during training.}
 \item{shuffle}{Single \code{TRUE} or \code{FALSE}: whether to shuffle rows each
 epoch.}
 \item{seed}{Optional non-negative integer random seed.}
-\item{callbacks}{A function or list of functions called once per epoch. See
-\code{\link{neuralnetwork-callbacks}}.}
+\item{callbacks}{Functions called once per epoch. See the
+\link[=neuralnetwork-callbacks]{callback reference}.}
 \item{verbose}{Single \code{TRUE} or \code{FALSE}: whether to print progress
 messages.}
+\item{validation_rows}{Unique held-out row indices. Overrides the validation
+fraction. An empty vector disables the holdout; leave at least one training row.}
 }
 \details{
 \code{nn_fit()} accepts either a formula plus data, or explicit predictor and
 outcome objects. Data-frame predictors are expanded with \code{model.matrix()},
 so factors are encoded with the usual R contrast machinery. Matrix inputs are
 used as supplied.
+
+Named matrix predictors are aligned by name at prediction time; a missing
+fitted name is an error, not a request to use positional order. Unnamed
+matrices use positional order. Formula transformations and contrasts are
+retained from fitting. With a holdout, data-dependent bases such as
+\code{poly()} are learned on the training rows only. Formula offsets are
+not supported.
+
+Every network layer has a bias, including the output layer. Removing the
+formula intercept changes the input encoding but does not remove network
+biases. A full set of factor indicators together with a bias can therefore
+be redundant, which prevents parameter intervals.
 
 When \code{task = "auto"}, factor, character, and logical outcomes are treated
 as classification. Numeric vectors and matrices are treated as regression.
@@ -119,6 +136,10 @@ for small deterministic
 tabular models and Adam when stochastic training features such as dropout or
 callbacks are used.
 
+Adam is also chosen when patience, a gradient threshold, learning-rate
+decay or finite gradient clipping is requested. Explicit L-BFGS fits reject
+these controls and callbacks instead of silently ignoring them.
+
 For L-BFGS fits, \code{epochs} and \code{stepmax} are passed to
 \code{\link[stats]{optim}} as the iteration limit rather than interpreted as
 mini-batch epochs. The printed model and \code{summary()} report function
@@ -132,6 +153,27 @@ Early stopping monitors validation loss when \code{validation_split > 0} and
 training loss otherwise. The returned model stores the training history,
 preprocessing information, fitted parameters, and enough blueprint information
 to prepare new data consistently at prediction time.
+
+Every strictly lower monitored loss saves a new checkpoint. \code{min_delta}
+only governs the patience counter, not which parameters are returned.
+Training loss includes the penalty \eqn{\lambda \sum W^2 / (2 \sum w)};
+biases are not penalized. The penalty gradient uses the full training-weight
+sum even with mini-batches. Validation loss excludes the penalty.
+For a batch of \eqn{b} rows sampled from \eqn{n} positive-weight training rows,
+the data gradient is
+\deqn{\frac{n}{b}\sum_{i\in B}\frac{w_i}{S}\nabla\ell_i,\qquad S=\sum_i w_i.}
+At fixed parameters, averaging over uniformly sampled batches gives the full
+weighted data gradient. Weights therefore still affect one-row batches;
+they are not normalized within each batch. Without row weights this reduces
+to the usual mean batch gradient. The last batch uses its actual size.
+
+Zero-weight training rows are omitted before fitting scalers and formula
+bases. Raw inputs must still satisfy encoding and finite-value requirements.
+Balanced class weights are calculated from
+training rows only, using their sample-weighted class counts; validation
+metrics use sample weights, not class weights. Training metrics use the
+combined sample and class weights. Default scaling uses ordinary unweighted
+positive-weight training means and standard deviations, not weighted moments.
 }
 \value{
 An object of class \code{neuralnetwork}, a list containing fitted parameters,
@@ -140,9 +182,10 @@ printing, prediction, plotting, summaries, and coefficients. See
 \code{\link{neuralnetwork-objects}} for the object structure.
 }
 \seealso{
-\code{\link{predict.neuralnetwork}}, \code{\link{nn_evaluate}},
-\code{\link{nn_tune}}, \code{\link{nn_cv}},
-\code{\link{neuralnetwork-callbacks}}, \code{\link{neuralnetwork-objects}}
+\link[=predict.neuralnetwork]{Prediction}, \link[=nn_evaluate]{evaluation},
+\link[=nn_tune]{tuning}, \link[=nn_cv]{cross-validation},
+\link[=neuralnetwork-callbacks]{callbacks} and
+\link[=neuralnetwork-objects]{model objects}.
 }
 \examples{
 fit <- nn_fit(Species ~ ., data = iris, hidden = c(8, 4), epochs = 10,

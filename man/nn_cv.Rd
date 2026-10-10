@@ -24,8 +24,9 @@ nn_cv(
 \item{x, y, data}{Model inputs passed to \code{\link{nn_fit}}.}
 \item{k}{Integer number of folds, between 2 and the number of rows.}
 \item{repeats}{Positive integer number of repeated fold assignments.}
-\item{stratify}{Whether to stratify folds for factor, character, or logical
-outcomes.}
+\item{stratify}{Whether to stratify classification folds, including indicator
+matrices when \code{task = "classification"}. Soft targets use their first
+maximal class for stratification.}
 \item{metric}{Metric to report. \code{"auto"} uses accuracy for classification
 and RMSE for regression. \code{"f1"} uses the positive-class F1 for binary
 classification and macro F1 for multiclass classification.}
@@ -35,16 +36,23 @@ deterministic consecutive seeds derived from this value.}
 \item{...}{Additional arguments passed to \code{\link{nn_fit}}.}
 }
 \details{
-For factor, character, and logical outcomes, \code{stratify = TRUE} attempts to
+For classification outcomes, \code{stratify = TRUE} attempts to
 keep class proportions similar across folds. Each class must have at least
 \code{k} rows; otherwise a stratified split would create folds whose training
-sets do not contain all classes. For other outcomes, folds are sampled without
+sets do not contain all classes. Unused outcome levels do not count as
+observed classes. For regression outcomes, folds are sampled without
 stratification. Repeated cross-validation creates a new fold assignment for
 each repeat.
 
 The metric is computed on each held-out fold using \code{\link{nn_evaluate}}.
 The returned \code{summary} data frame reports the mean and standard deviation
-of fold scores for each metric name.
+of finite fold scores for each metric name, with \code{n_scored} and
+\code{n_folds}. Undefined scores remain in \code{results}; an entirely
+undefined metric returns \code{NA} mean and standard deviation, not an empty
+summary. Fold-score standard deviation is not a confidence interval.
+\code{sample_weight} in \code{...} is split into training and held-out
+weights; held-out metrics are weighted too. \code{metric = "loss"} uses the
+fitted data loss without a regularization penalty, not RMSE.
 }
 \value{
 A \code{neuralnetwork_cv} object, a list with:
@@ -52,6 +60,8 @@ A \code{neuralnetwork_cv} object, a list with:
 \item{\code{results}}{Fold-level scores.}
 \item{\code{summary}}{Mean and standard deviation by metric.}
 \item{\code{models}}{Fitted model for each fold.}
+\item{\code{folds}}{Repeat identifier, fold identifier and held-out row indices
+for each model.}
 \item{\code{k}}{Number of folds.}
 \item{\code{repeats}}{Number of repeats.}
 \item{\code{call}}{Matched call.}

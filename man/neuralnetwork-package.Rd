@@ -29,10 +29,9 @@ uses L-BFGS for small deterministic tabular models and Adam for stochastic
 training features, and \code{backend = "auto"} uses the Rcpp forward-pass
 backend when available.
 
-For users coming from \pkg{nnet} or \pkg{neuralnet}, the package includes helper
-functions such as \code{\link{nn_multinom}}, \code{\link{nn_class_ind}},
-\code{\link{nn_compute}}, \code{\link{nn_generalized_weights}},
-\code{\link{nn_hessian}}, and \code{\link{nn_confint}}.
+For users coming from \pkg{nnet} or \pkg{neuralnet}, the
+\link[=neuralnetwork-compat]{compatibility reference} covers class indicators,
+layer activations, sensitivities and the limits of parameter inference.
 }
 \section{Main functions}{
 \itemize{

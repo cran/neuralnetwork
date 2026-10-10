@@ -156,9 +156,8 @@ fit_tiny <- nn_fit(
   verbose = FALSE
 )
 h <- nn_hessian(fit_tiny, tiny_data)
-ci <- nn_confint(fit_tiny, tiny_data)
 stopifnot(is.matrix(h))
-stopifnot(nrow(ci) == nrow(h))
+expect_error(nn_confint(fit_tiny, tiny_data), "Parameter intervals require")
 expect_error(
   nn_hessian(fit_tiny, tiny_data[1:3, ], y = tiny_data$Species[1:2]),
   "Outcome data must have one row per prediction row."
@@ -531,3 +530,20 @@ expect_error(
   nn_load(tmp_bad),
   "`path` does not contain a neuralnetwork model."
 )
+
+plot_file <- tempfile(fileext = ".pdf")
+grDevices::pdf(plot_file)
+stopifnot(identical(plot(fit_reg), fit_reg),
+          identical(plot(fit_class, type = "network"), fit_class))
+sensitivities <- nn_gwplot(fit_reg, mtcars)
+stopifnot(is.matrix(sensitivities), nrow(sensitivities) == nrow(mtcars))
+stopifnot(identical(nn_gwplot(fit_reg, mtcars, ylim = c(-20, 20),
+                              ylab = "Sensitivity"), sensitivities))
+expect_error(nn_gwplot(fit_reg, mtcars[0, ]), "requires at least one observation")
+linear_plot <- nn_fit(mpg ~ wt, mtcars, hidden = 0, optimizer = "lbfgs",
+                      epochs = 50, seed = 1, verbose = FALSE)
+stopifnot(identical(plot(linear_plot), linear_plot),
+          identical(plot(linear_plot, xlab = "Custom label"), linear_plot))
+grDevices::dev.off()
+stopifnot(file.info(plot_file)$size > 1000)
+unlink(plot_file)

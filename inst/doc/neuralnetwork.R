@@ -31,6 +31,18 @@ round(predict(fit_class, iris[1:5, ], type = "prob"), 3)
 ev_class <- nn_evaluate(fit_class, iris)
 ev_class
 
+## ----missed-class-metrics-----------------------------------------------------
+confusion <- matrix(
+  c(20, 0, 45, 0, 0, 19, 18, 0, 378), nrow = 3, byrow = TRUE,
+  dimnames = list(truth = c("Excellent", "Poor", "Typical"),
+                  estimate = c("Excellent", "Poor", "Typical"))
+)
+confusion
+class_f1 <- 2 * diag(confusion) / (rowSums(confusion) + colSums(confusion))
+round(class_f1, 5)
+round(c(accuracy = sum(diag(confusion)) / sum(confusion),
+        macro_f1 = mean(class_f1)), 5)
+
 ## ----binary-------------------------------------------------------------------
 iris_binary <- subset(iris, Species != "virginica")
 row_weight <- ifelse(iris_binary$Species == "versicolor", 1.5, 1)
@@ -53,6 +65,18 @@ fit_binary <- nn_fit(
 
 round(predict(fit_binary, iris_binary[1:5, ], type = "prob"), 3)
 nn_evaluate(fit_binary, iris_binary)
+
+## ----one-row-weights----------------------------------------------------------
+intercept_update <- function(weights) {
+  fit <- nn_fit(matrix(0, 2, 1), c(0, 10), hidden = 0,
+                optimizer = "sgd", epochs = 1, batch_size = 1,
+                learning_rate = 0.1, sample_weight = weights,
+                scale = FALSE, y_scale = FALSE, shuffle = FALSE,
+                seed = 1, verbose = FALSE)
+  unname(coef(fit)$b[[1]])
+}
+c(weight_on_second = intercept_update(c(1, 9)),
+  weight_on_first = intercept_update(c(9, 1)))
 
 ## ----regression---------------------------------------------------------------
 fit_reg <- nn_fit(
@@ -179,4 +203,17 @@ nn_class_ind(iris$Species[1:4])
 computed <- nn_compute(fit_class, iris[1:2, ])
 names(computed$neurons)
 round(computed$net.result, 3)
+
+## ----transformed-response-----------------------------------------------------
+log_fit <- nn_fit(log(mpg) ~ wt, mtcars, hidden = 0, epochs = 100,
+                  verbose = FALSE, seed = 12)
+nn_evaluate(log_fit, mtcars)$metrics
+sqrt(mean((predict(log_fit, mtcars) - log(mtcars$mpg))^2))
+
+## ----parameter-intervals------------------------------------------------------
+linear_fit <- nn_fit(mpg ~ wt, mtcars, hidden = 0, optimizer = "lbfgs",
+                     scale = FALSE, y_scale = FALSE, epochs = 300,
+                     verbose = FALSE, seed = 12)
+nn_confint(linear_fit, mtcars)
+confint(lm(mpg ~ wt, mtcars))
 

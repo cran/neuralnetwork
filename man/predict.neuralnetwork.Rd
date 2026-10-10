@@ -6,7 +6,8 @@ Predict classes, class probabilities, or numeric responses from a fitted
 \code{neuralnetwork} model.
 }
 \usage{
-\method{predict}{neuralnetwork}(object, newdata, type = c("response", "class", "prob"), ...)
+\method{predict}{neuralnetwork}(object, newdata,
+  type = c("response", "class", "prob"), ...)
 }
 \arguments{
 \item{object}{A fitted \code{neuralnetwork} object.}
@@ -22,6 +23,12 @@ return class labels. \code{type = "prob"} returns a probability matrix with one
 column per class. For regression models, \code{type = "response"} returns
 numeric predictions on the original response scale. \code{type = "class"} and
 \code{type = "prob"} are not valid for regression.
+
+Target scaling is undone, but a formula transformation is not inverted:
+\code{log(y) ~ x} predicts log-y, not raw y. Named matrix predictors are
+matched by fitted column names; missing names are an error. Unnamed matrices
+must have the fitted width and column order. Stored formula bases and
+contrasts are reused even if current contrast options differ.
 }
 \value{
 A factor for classification responses, a probability matrix for

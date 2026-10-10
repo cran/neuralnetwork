@@ -7,9 +7,9 @@
     fan_in <- layers[i]
     fan_out <- layers[i + 1L]
     scale <- if (activation %in% c("relu", "leaky_relu")) {
-      sqrt(2 / fan_in)
+      sqrt(2 / max(1L, fan_in))
     } else {
-      sqrt(1 / fan_in)
+      sqrt(1 / max(1L, fan_in))
     }
     weights[[i]] <- matrix(stats::rnorm(fan_in * fan_out, sd = scale),
                            nrow = fan_in, ncol = fan_out)
@@ -45,19 +45,28 @@
   state
 }
 
-.init_optimizer_state <- function(params) {
-  list(
-    mW = lapply(params$W, function(x) x * 0),
-    vW = lapply(params$W, function(x) x * 0),
-    mb = lapply(params$b, function(x) x * 0),
-    vb = lapply(params$b, function(x) x * 0),
-    velocityW = lapply(params$W, function(x) x * 0),
-    velocityb = lapply(params$b, function(x) x * 0),
-    prevW = lapply(params$W, function(x) x * 0),
-    prevb = lapply(params$b, function(x) x * 0),
-    stepW = lapply(params$W, function(x) x * 0 + 0.1),
-    stepb = lapply(params$b, function(x) x * 0 + 0.1)
-  )
+.init_optimizer_state <- function(params, optimizer = NULL) {
+  fields <- if (is.null(optimizer)) {
+    c("mW", "vW", "mb", "vb", "velocityW", "velocityb",
+      "prevW", "prevb", "stepW", "stepb")
+  } else {
+    switch(optimizer,
+      adam = c("mW", "vW", "mb", "vb"),
+      momentum = c("velocityW", "velocityb"),
+      nesterov = c("velocityW", "velocityb"),
+      rprop = c("prevW", "prevb", "stepW", "stepb"),
+      grprop = c("prevW", "prevb", "stepW", "stepb"),
+      sgd = character(), lbfgs = character(),
+      stop("Unknown optimizer.", call. = FALSE)
+    )
+  }
+  state <- list()
+  for (field in fields) {
+    template <- if (endsWith(field, "W")) params$W else params$b
+    initial <- if (startsWith(field, "step")) 0.1 else 0
+    state[[field]] <- lapply(template, function(x) x * 0 + initial)
+  }
+  state
 }
 
 .forward <- function(x, params, activation, task, dropout, training,
@@ -121,21 +130,32 @@
 
 .backward <- function(forward, params, y, activation, task, l2,
                       weights = NULL, loss = "squared_error",
-                      huber_delta = 1) {
+                      huber_delta = 1, regularization_denom = NULL,
+                      training_n = NULL) {
   n_layers <- length(params$W)
   denom <- .weight_denom(weights, nrow(y))
-  row_scale <- .row_weights(weights, nrow(y)) / denom
+  regularization_denom <- regularization_denom %||% denom
+  row_scale <- .row_weights(weights, nrow(y)) / if (is.null(training_n)) {
+    denom
+  } else {
+    regularization_denom
+  }
+  if (!is.null(training_n)) row_scale <- row_scale * (training_n / nrow(y))
   residual <- forward$output - y
   if (task == "regression" && loss == "huber") {
     residual <- pmax(pmin(residual, huber_delta), -huber_delta)
   }
   dZ <- residual * row_scale
+  penalty_scale <- if (l2 > 0) sqrt(l2) / sqrt(regularization_denom) else 0
   grads_W <- vector("list", n_layers)
   grads_b <- vector("list", n_layers)
 
   for (i in n_layers:1L) {
     cache <- forward$caches[[i]]
-    grads_W[[i]] <- crossprod(cache$A_prev, dZ) + (l2 / denom) * params$W[[i]]
+    grads_W[[i]] <- crossprod(cache$A_prev, dZ)
+    if (l2 > 0) {
+      grads_W[[i]] <- grads_W[[i]] + (params$W[[i]] * penalty_scale) * penalty_scale
+    }
     grads_b[[i]] <- colSums(dZ)
 
     if (i > 1L) {
@@ -189,6 +209,9 @@
       state$vW[[i]] <- beta2 * state$vW[[i]] + (1 - beta2) * grads$W[[i]]^2
       state$mb[[i]] <- beta1 * state$mb[[i]] + (1 - beta1) * grads$b[[i]]
       state$vb[[i]] <- beta2 * state$vb[[i]] + (1 - beta2) * grads$b[[i]]^2
+      if (any(!is.finite(state$vW[[i]])) || any(!is.finite(state$vb[[i]]))) {
+        stop("Optimizer produced non-finite second moments. Rescale the data or reduce the learning rate.", call. = FALSE)
+      }
 
       mW_hat <- state$mW[[i]] / (1 - beta1^step)
       vW_hat <- state$vW[[i]] / (1 - beta2^step)
@@ -202,13 +225,22 @@
     }
   }
 
+  if (!.all_finite(params)) {
+    stop("Optimizer produced non-finite parameters or state. Rescale the data or reduce the learning rate.", call. = FALSE)
+  }
   list(params = params, state = state)
+}
+
+.all_finite <- function(parts) {
+  all(vapply(parts, function(x) {
+    if (is.list(x)) .all_finite(x) else all(is.finite(x))
+  }, logical(1)))
 }
 
 .rprop_step <- function(param, grad, prev_grad, step,
                         increase = 1.2, decrease = 0.5,
                         step_min = 1e-6, step_max = 50) {
-  prod <- grad * prev_grad
+  prod <- sign(grad) * sign(prev_grad)
   step <- ifelse(prod > 0, pmin(step * increase, step_max),
                  ifelse(prod < 0, pmax(step * decrease, step_min), step))
   adjusted_grad <- ifelse(prod < 0, 0, grad)
@@ -219,11 +251,11 @@
 .dataset_loss <- function(x, y, params, activation, task, l2, backend = "r",
                           weights = NULL, loss = "squared_error",
                           huber_delta = 1) {
-  out <- .forward(x, params, activation, task, dropout = 0,
-                  training = FALSE, backend = backend)$output
-  data_loss <- .loss_from_output(out, y, task, weights, loss, huber_delta)
-  penalty <- 0.5 * l2 * sum(vapply(params$W, function(w) sum(w^2), numeric(1))) /
-    .weight_denom(weights, nrow(y))
+  forward <- .forward(x, params, activation, task, dropout = 0,
+                      training = FALSE, backend = backend)
+  data_loss <- .loss_from_output(forward$output, y, task, weights, loss,
+                                huber_delta, forward$caches[[length(params$W)]]$Z)
+  penalty <- .l2_penalty(params, l2, weights, nrow(y))
   data_loss + penalty
 }
 
@@ -238,27 +270,54 @@
                            backend = "r", target_scaler = NULL,
                            weights = NULL, loss = "squared_error",
                            huber_delta = 1) {
-  out <- .forward(x, params, activation, task, dropout = 0,
-                  training = FALSE, backend = backend)$output
-  data_loss <- .loss_from_output(out, y, task, weights, loss, huber_delta)
-  penalty <- 0.5 * l2 * sum(vapply(params$W, function(w) sum(w^2), numeric(1))) /
-    .weight_denom(weights, nrow(y))
+  forward <- .forward(x, params, activation, task, dropout = 0,
+                      training = FALSE, backend = backend)
+  out <- forward$output
+  data_loss <- .loss_from_output(out, y, task, weights, loss, huber_delta,
+                                forward$caches[[length(params$W)]]$Z)
+  penalty <- .l2_penalty(params, l2, weights, nrow(y))
   metric <- .metric_from_output(out, y_raw, task, target_scaler, weights)
   list(loss = data_loss + penalty, metric = metric)
 }
 
+.l2_penalty <- function(params, l2, weights, n) {
+  if (l2 == 0) return(0)
+  multiplier <- sqrt(l2) / sqrt(.weight_denom(weights, n))
+  sum(vapply(params$W, function(w) sum((w * multiplier)^2), numeric(1))) / 2
+}
+
 .loss_from_output <- function(out, y, task, weights = NULL,
-                              loss = "squared_error", huber_delta = 1) {
+                              loss = "squared_error", huber_delta = 1,
+                              logits = NULL) {
   if (task == "classification") {
-    row_loss <- -rowSums(y * log(pmax(out, 1e-15)))
-    return(stats::weighted.mean(row_loss, .row_weights(weights, nrow(y))))
+    row_loss <- if (is.null(logits)) {
+      -rowSums(y * log(pmax(out, 1e-15)))
+    } else {
+      maximum <- apply(logits, 1L, max)
+      shifted <- logits - maximum
+      terms <- y * shifted
+      extreme <- !is.finite(shifted) & y > 0
+      if (any(extreme)) terms[extreme] <- (y * logits - y * maximum)[extreme]
+      terms[y == 0] <- 0
+      log(rowSums(exp(shifted))) - rowSums(terms)
+    }
+    return(.weighted_mean(row_loss, weights))
   }
 
   if (task == "binary_classification") {
-    out <- pmin(pmax(out, 1e-15), 1 - 1e-15)
-    row_loss <- -(y[, 1L] * log(out[, 1L]) +
-      (1 - y[, 1L]) * log(1 - out[, 1L]))
-    return(stats::weighted.mean(row_loss, .row_weights(weights, nrow(y))))
+    if (is.null(logits)) {
+      out <- pmin(pmax(out, 1e-15), 1 - 1e-15)
+      row_loss <- -(y[, 1L] * log(out[, 1L]) +
+        (1 - y[, 1L]) * log(1 - out[, 1L]))
+    } else {
+      z <- logits[, 1L]
+      linear <- numeric(length(z))
+      positive <- z >= 0
+      linear[positive] <- (1 - y[positive, 1L]) * z[positive]
+      linear[!positive] <- -y[!positive, 1L] * z[!positive]
+      row_loss <- linear + log1p(exp(-abs(z)))
+    }
+    return(.weighted_mean(row_loss, weights))
   }
 
   residual <- out - y
@@ -272,7 +331,7 @@
   } else {
     row_loss <- 0.5 * rowSums(residual^2)
   }
-  stats::weighted.mean(row_loss, .row_weights(weights, nrow(y)))
+  .weighted_mean(row_loss, weights)
 }
 
 .metric_from_output <- function(out, y_raw, task, target_scaler = NULL,
@@ -282,18 +341,17 @@
   if (task == "classification") {
     truth <- max.col(y_raw, ties.method = "first")
     pred <- max.col(out, ties.method = "first")
-    return(stats::weighted.mean(pred == truth, weights))
+    return(.weighted_mean(pred == truth, weights))
   }
 
   if (task == "binary_classification") {
     truth <- y_raw[, 1L] >= 0.5
     pred <- out[, 1L] >= 0.5
-    return(stats::weighted.mean(pred == truth, weights))
+    return(.weighted_mean(pred == truth, weights))
   }
 
   out <- .inverse_target_scaler(out, target_scaler)
-  err <- rowSums((out - y_raw)^2)
-  sqrt(stats::weighted.mean(err, weights))
+  .weighted_rmse(out - y_raw, weights)
 }
 
 .metric_name <- function(task) {
@@ -311,6 +369,21 @@
   weights
 }
 
+.weighted_mean <- function(x, weights) {
+  w <- .row_weights(weights, length(x))
+  w <- w / .weight_denom(w, length(x))
+  positive <- w > 0
+  sum(x[positive] * w[positive])
+}
+
+.weighted_rmse <- function(error, weights) {
+  positive <- .row_weights(weights, nrow(error)) > 0
+  scale <- max(abs(error[positive, , drop = FALSE]))
+  if (!is.finite(scale)) stop("Regression residuals exceeded numerical range. Rescale values.", call. = FALSE)
+  if (scale == 0) return(0)
+  scale * sqrt(.weighted_mean(rowMeans((error / scale)^2), weights))
+}
+
 .weight_denom <- function(weights, n) {
   denom <- sum(.row_weights(weights, n))
   if (!is.finite(denom) || denom <= 0) {
@@ -320,27 +393,39 @@
 }
 
 .gradient_norm <- function(grads) {
-  sqrt(
-    sum(vapply(grads$W, function(x) sum(x^2), numeric(1))) +
-      sum(vapply(grads$b, function(x) sum(x^2), numeric(1)))
-  )
+  values <- .flatten_grads(grads)
+  if (any(!is.finite(values))) {
+    stop("Non-finite gradients encountered. Rescale the data or reduce the learning rate.",
+         call. = FALSE)
+  }
+  largest <- max(abs(values))
+  if (largest == 0) return(0)
+  largest * sqrt(sum((values / largest)^2))
 }
 
 .clip_grads <- function(grads, gradient_clip, norm = .gradient_norm(grads)) {
   if (!is.finite(gradient_clip) || norm <= gradient_clip || norm == 0) {
     return(grads)
   }
-  scale <- gradient_clip / norm
+  values <- .flatten_grads(grads)
+  largest <- max(abs(values))
+  scale <- (gradient_clip / largest) / sqrt(sum((values / largest)^2))
   grads$W <- lapply(grads$W, `*`, scale)
   grads$b <- lapply(grads$b, `*`, scale)
   grads
 }
 
 .dense <- function(x, w, b, backend = "r") {
-  if (backend == "rcpp") {
-    return(.Call("neuralnetwork_dense_bias", x, w, b, PACKAGE = "neuralnetwork"))
+  out <- if (backend == "rcpp") {
+    .Call("neuralnetwork_dense_bias", x, w, b, PACKAGE = "neuralnetwork")
+  } else {
+    sweep(x %*% w, 2L, b, "+")
   }
-  sweep(x %*% w, 2L, b, "+")
+  if (any(!is.finite(out))) {
+    stop("Dense layer produced non-finite values. Rescale the data or reduce the learning rate.",
+         call. = FALSE)
+  }
+  out
 }
 
 .activate <- function(x, activation, backend = "r") {
@@ -387,6 +472,11 @@
 }
 
 .softmax <- function(x, backend = "r") {
+  if (ncol(x) == 0L || any(!is.finite(x))) {
+    stop("Softmax requires finite values and at least one output column.",
+         call. = FALSE)
+  }
+  if (nrow(x) == 0L) return(x)
   if (backend == "rcpp") {
     return(.Call("neuralnetwork_softmax", x, PACKAGE = "neuralnetwork"))
   }

@@ -42,11 +42,20 @@ deterministic consecutive seeds derived from this value.}
 \code{\link{nn_fit}}. Atomic vectors are expanded as candidate values. Use
 lists for arguments that are themselves vectors, such as \code{hidden}.
 
-Each candidate is fitted with \code{validation_split} and scored on the
-held-out validation rows when available. Larger values are better for accuracy,
+All candidates share one validation row set drawn before fitting. Candidate
+seeds vary initialization and training, not the comparison data. Data, seeds
+and validation-row arguments cannot be grid entries. Grid values override
+the same argument in \code{...}. Candidates must use a common task and
+metric, and only finite scores can rank. Larger values are better for accuracy,
 balanced accuracy, F1, macro F1, and R-squared. Loss, log loss, RMSE, and MAE
 are minimized. Set \code{maximize} explicitly to
 override this behavior.
+Scoring sample weights are supplied through \code{...}, not the grid.
+When ranking by \code{loss}, candidates must share the loss definition,
+Huber delta (if used) and target scaler. To compare different losses, choose
+a common reporting metric such as RMSE. Without a holdout, loss is training
+data loss without the regularization penalty; it is not an estimate of
+generalization error.
 
 When \code{seed} is supplied, candidate fits receive deterministic consecutive
 seeds. The returned object keeps fitted candidate models; large grids can use a
@@ -61,8 +70,9 @@ an \code{error} message, and \code{NA} score/rank values.
 \value{
 A \code{neuralnetwork_tune} object, a list with:
 \describe{
-\item{\code{results}}{Candidate table ranked by score, including candidate
-success and error columns.}
+\item{\code{results}}{Ranked candidate table, with success and error columns.
+
+The \code{candidate_id} column indexes \code{models}, even after sorting.}
 \item{\code{best_model}}{The selected fitted model.}
 \item{\code{best_params}}{One-row data frame of selected hyperparameters.}
 \item{\code{models}}{List of fitted candidate models.}

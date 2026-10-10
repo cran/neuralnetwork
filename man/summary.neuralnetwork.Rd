@@ -3,7 +3,7 @@
 \alias{coef.neuralnetwork}
 \title{Summarize neuralnetwork models}
 \description{
-Return model metadata and final training metrics, or extract raw fitted
+Return model metadata and selected-checkpoint training metrics, or extract raw fitted
 parameters.
 }
 \usage{
@@ -21,6 +21,8 @@ reports function evaluations and the convergence code returned by
 \code{\link[stats]{optim}}, which helps distinguish a normal optimizer stop
 from an iteration limit. Use \code{coef()} when you need the raw weight matrices
 and bias vectors for inspection or custom post-processing.
+The summary describes the parameters returned for prediction, which may come
+from an earlier epoch than the last row in the complete training history.
 }
 \value{
 \code{summary()} returns a summary object. \code{coef()} returns a list of

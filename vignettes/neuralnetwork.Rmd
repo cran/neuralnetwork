@@ -46,7 +46,9 @@ fit_class
 ```
 
 The printed model reports the task, architecture, optimizer, loss, backend,
-training length, and final training or validation metrics.
+training length, and the selected checkpoint's training and validation metrics.
+They need not come from the last epoch. Epoch optimizers store their trajectory
+in `fit_class$history`; L-BFGS stores final diagnostics in one row.
 
 Use `predict()` for classes or probabilities.
 
@@ -64,8 +66,41 @@ ev_class <- nn_evaluate(fit_class, iris)
 ev_class
 ```
 
+This call scores all 150 flowers, including training rows. It is a workflow
+check, not an independent test-set estimate. `nn_cv()` below fits each fold
+without its assessment rows. When choosing settings from the same data, keep
+a separate test set out of both training and tuning for the final evaluation.
+
 For imbalanced classification, balanced accuracy or F1 is usually more useful
 than raw accuracy. For probability forecasts, inspect log loss as well.
+
+### When a class is never predicted
+
+Accuracy can hide a missed minority class. In the following confusion matrix,
+none of the 19 `Poor` observations is predicted correctly, yet overall accuracy
+is about 83%.
+
+```{r missed-class-metrics}
+confusion <- matrix(
+  c(20, 0, 45, 0, 0, 19, 18, 0, 378), nrow = 3, byrow = TRUE,
+  dimnames = list(truth = c("Excellent", "Poor", "Typical"),
+                  estimate = c("Excellent", "Poor", "Typical"))
+)
+confusion
+class_f1 <- 2 * diag(confusion) / (rowSums(confusion) + colSums(confusion))
+round(class_f1, 5)
+round(c(accuracy = sum(diag(confusion)) / sum(confusion),
+        macro_f1 = mean(class_f1)), 5)
+```
+
+The three F1 scores are 0.38835, 0, and 0.90215, giving macro F1 of 0.43017.
+Dropping the zero would give 0.64525 and overstate performance.
+`nn_evaluate()` computes F1 directly from counts and includes every fitted class
+in macro precision, recall, and F1. A class-wise zero denominator returns zero.
+Balanced accuracy averages recall only over classes present in the truth;
+it equals macro recall when all fitted classes occur in the evaluation set.
+When a class is absent from the truth, its reported recall of zero is a
+convention, not evidence that the model failed on examples of that class.
 
 ## Binary classification and weights
 
@@ -95,6 +130,31 @@ fit_binary <- nn_fit(
 round(predict(fit_binary, iris_binary[1:5, ], type = "prob"), 3)
 nn_evaluate(fit_binary, iris_binary)
 ```
+
+Weights apply to the training objective even when a batch contains only one
+row. Here the network is just an intercept. It starts at zero, the first target
+is zero, and the second update carries most of the training weight.
+
+```{r one-row-weights}
+intercept_update <- function(weights) {
+  fit <- nn_fit(matrix(0, 2, 1), c(0, 10), hidden = 0,
+                optimizer = "sgd", epochs = 1, batch_size = 1,
+                learning_rate = 0.1, sample_weight = weights,
+                scale = FALSE, y_scale = FALSE, shuffle = FALSE,
+                seed = 1, verbose = FALSE)
+  unname(coef(fit)$b[[1]])
+}
+c(weight_on_second = intercept_update(c(1, 9)),
+  weight_on_first = intercept_update(c(9, 1)))
+```
+
+The intercepts are 1.8 and 0.2. Dividing each one-row gradient by that row's
+weight would erase the difference. Training instead uses the full training
+weight sum and the actual batch size. With `l2 = 0`, multiplying every row
+weight by the same positive constant leaves this objective unchanged.
+Zero-weight training rows are omitted from learning, scalers and fitted formula
+bases; they still must pass input encoding checks. Scaling uses ordinary means
+and standard deviations among the retained rows, not weighted moments.
 
 ## Regression
 
@@ -283,6 +343,67 @@ computed <- nn_compute(fit_class, iris[1:2, ])
 names(computed$neurons)
 round(computed$net.result, 3)
 ```
+
+## Checking scales and parameter intervals
+
+For a formula such as `log(mpg) ~ wt`, the response is log-mpg. Automatic
+target scaling is undone before reporting predictions, but `log()` is not:
+`nn_evaluate()` compares those predictions with `log(mpg)` too. With several
+responses, RMSE averages squared errors over rows and output columns, while
+R-squared pools variation after centering each output separately. Outputs
+with larger units can dominate the pooled R-squared.
+
+```{r transformed-response}
+log_fit <- nn_fit(log(mpg) ~ wt, mtcars, hidden = 0, epochs = 100,
+                  verbose = FALSE, seed = 12)
+nn_evaluate(log_fit, mtcars)$metrics
+sqrt(mean((predict(log_fit, mtcars) - log(mtcars$mpg))^2))
+```
+
+The last number should match the reported RMSE. Exponentiating predictions
+produces a different prediction target; it does not automatically estimate
+the conditional mean of mpg.
+
+`metric = "loss"` means the fitted data loss throughout tuning,
+cross-validation and permutation importance. It excludes L2 penalties and
+uses the fitted target scaler. That makes loss suitable for checking one
+model's objective, but it is not interchangeable with original-scale RMSE.
+Tuning candidates share one holdout. For a fully reproducible manual split,
+pass `validation_rows` to `nn_fit()` and inspect `fit$validation$rows`.
+Row weights can also be passed to `nn_evaluate()`; training class weights do
+not silently become evaluation weights.
+
+For coefficient uncertainty, start with a model whose parameters are
+identifiable. A network without hidden layers and with a single linear
+output can be checked directly against ordinary least squares:
+
+```{r parameter-intervals}
+linear_fit <- nn_fit(mpg ~ wt, mtcars, hidden = 0, optimizer = "lbfgs",
+                     scale = FALSE, y_scale = FALSE, epochs = 300,
+                     verbose = FALSE, seed = 12)
+nn_confint(linear_fit, mtcars)
+confint(lm(mpg ~ wt, mtcars))
+```
+
+The limits agree; `lm()` prints the intercept first, whereas network
+parameters list weights before biases. Disabling scaling here makes both
+sets of coefficients use the same units. The regression intervals assume
+independent errors with constant Gaussian variance. Unregularized binary
+logistic fits without hidden layers use normal, asymptotic limits instead.
+Both require a converged L-BFGS fit and the original training observations.
+
+Hidden-layer weights, redundant softmax parameters, weighted fits and Huber
+fits do not receive intervals from `nn_confint()`. A singular information
+matrix or saturated logistic probabilities also produces an error. Adding a
+small constant to a Hessian would make it invertible, but would not make
+these intervals statistically justified. `nn_hessian()` remains available
+as a mean-loss curvature diagnostic, not a parameter covariance matrix.
+
+`nn_generalized_weights()` reports input sensitivities per unit before
+predictor scaling. Its classification outputs are probability derivatives,
+not the log-odds derivatives provided by `neuralnet`. For factors, polynomial
+bases and interactions, the inputs are encoded columns rather than raw
+variables.
 
 ## Function map
 

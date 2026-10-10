@@ -2,10 +2,10 @@
 \alias{print.neuralnetwork}
 \title{Print a neuralnetwork model}
 \description{
-Print a fitted \code{neuralnetwork} model with architecture, optimizer,
-loss, backend, training progress, final training metrics, and validation
-metrics when available. L-BFGS fits report function evaluations instead of
-epochs.
+Print model architecture, optimizer, loss and backend.
+
+Selected-checkpoint training metrics and available validation metrics follow
+the training progress. L-BFGS reports function evaluations instead of epochs.
 }
 \usage{
 \method{print}{neuralnetwork}(x, ...)

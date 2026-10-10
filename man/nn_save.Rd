@@ -18,9 +18,14 @@ nn_load(path)
 \details{
 The saved file contains the fitted model object, including preprocessing
 metadata, fitted parameters, and training history. \code{nn_load()} checks that
-the path exists and that the object inherits from class \code{neuralnetwork}
-before returning it. \code{nn_save()} expects the destination directory to
+the path exists, the model class, parameter dimensions, finite values and
+preprocessing metadata before returning it. Older valid models may still be
+loaded for prediction, but corrected numerical diagnostics and inference
+metadata require refitting. \code{nn_save()} expects the destination directory to
 already exist; it does not create folders.
+Models with holdouts retain validation data; consider this before sharing an
+RDS file. Structural validation does not make an untrusted serialized R
+object safe to load.
 }
 \value{
 \code{nn_save()} returns the path invisibly. \code{nn_load()} returns a

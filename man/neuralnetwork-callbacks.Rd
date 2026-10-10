@@ -27,8 +27,10 @@ a callback.}
 }
 
 A callback may return \code{FALSE} or \code{list(stop = TRUE)} to stop
-training, \code{list(learning_rate = value)} to update the next epoch's learning
-rate to a positive finite scalar, or \code{NULL} to leave training unchanged.
+training. Return \code{NULL} to leave training unchanged.
+
+To change the next epoch's learning rate, return
+\code{list(learning_rate = value)}. The value must be positive and finite.
 If \code{stop} is returned in a list, it must be a single \code{TRUE} or
 \code{FALSE}.
 

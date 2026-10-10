@@ -108,9 +108,17 @@ BEGIN_RCPP
   NumericMatrix x(xSEXP);
   const int n = x.nrow();
   const int p = x.ncol();
+  if (p == 0) {
+    stop("Softmax requires finite values and at least one output column.");
+  }
   NumericMatrix out(n, p);
 
   for (int i = 0; i < n; ++i) {
+    for (int j = 0; j < p; ++j) {
+      if (!std::isfinite(x(i, j))) {
+        stop("Softmax requires finite values and at least one output column.");
+      }
+    }
     double row_max = x(i, 0);
     for (int j = 1; j < p; ++j) {
       if (x(i, j) > row_max) {
